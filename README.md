@@ -27,7 +27,7 @@ a-inf query "what do I know about rate limiting?"
 
 `a-inf init` is local and deterministic. It creates the vault folders, seed files, `.a-inf/config.toml`, a compatibility `.env`, Obsidian config, `.gitignore` entries for local config, and local skill symlinks under `.skills/`. New `.env` files default `QMD_WIKI_COLLECTION` and `QMD_PAPERS_COLLECTION` to the repo directory name, and init creates the matching QMD collection.
 
-`a-inf ingest` now runs a hybrid deterministic engine: Python selects sources, computes hashes, asks Codex for a JSON ingest plan, validates the whole plan, and only then writes wiki files. After successful write workflows, the CLI refreshes QMD with `qmd update` and `qmd embed`. Other synthesis-heavy commands still dispatch to Codex with the matching skill. Use `--print-prompt` to inspect the generated ingest packet or dispatch prompt instead:
+`a-inf ingest` now runs a hybrid deterministic engine: Python selects sources, extracts URL content with `defuddle`, computes hashes, asks Codex for a JSON ingest plan, validates the whole plan, and only then writes wiki files. After successful write workflows, the CLI refreshes QMD with `qmd update` and `qmd embed`. Other synthesis-heavy commands still dispatch to Codex with the matching skill. Use `--print-prompt` to inspect the generated ingest packet or dispatch prompt instead:
 
 ```bash
 a-inf ingest paper-xx --print-prompt
@@ -67,8 +67,8 @@ If `AGENTS.md` already exists, `a-inf init` appends a small marked `a-inf` secti
 | Command | Workflow |
 |---|---|
 | `a-inf init [path]` | Initialize a repo as a vault |
-| `a-inf ingest <source...>` | Hybrid deterministic document ingest |
-| `a-inf ingest <url>` | Route URL ingest to `ingest-url` |
+| `a-inf ingest <source...>` | Hybrid deterministic document and URL ingest |
+| `a-inf ingest <url>` | Fetch with `defuddle`, then run hybrid ingest |
 | `a-inf query <question>` | Answer from the compiled vault |
 | `a-inf status` | Show ingest state and deltas locally |
 | `a-inf insights` | Analyze hubs, bridges, and graph structure |
@@ -94,7 +94,7 @@ Most command dispatch is intentionally thin during this migration, but document 
 a-inf ingest paper-xx
 ```
 
-selects new or modified sources, writes a run packet under `.a-inf/runs/`, asks Codex to create `.a-inf/runs/<run-id>/plan.json`, validates the JSON, then applies page, manifest, index, log, and hot-cache updates deterministically. URLs and `--data` still route to their specialized skills.
+selects new or modified sources, writes a run packet under `.a-inf/runs/`, asks Codex to create `.a-inf/runs/<run-id>/plan.json`, validates the JSON, then applies page, manifest, index, log, and hot-cache updates deterministically. URL sources are fetched with `defuddle` before planning and land under `references/`; `--data` still routes to its specialized skill.
 
 The default mode is append. Full and raw modes are available:
 
@@ -138,7 +138,6 @@ The bundled skills remain the source of truth for language-model workflows:
 ├── cross-linker/
 ├── data-ingest/
 ├── graph-colorize/
-├── ingest-url/
 ├── llm-wiki/
 ├── tag-taxonomy/
 ├── wiki-capture/

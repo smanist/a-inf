@@ -113,7 +113,7 @@ a-inf ingest --raw          # promote files from _raw/
 | CLI | Skill |
 |---|---|
 | `a-inf ingest <source>` | `wiki-ingest` |
-| `a-inf ingest <url>` | `ingest-url` |
+| `a-inf ingest <url>` | `wiki-ingest` |
 | `a-inf ingest --data <source>` | `data-ingest` |
 | `a-inf query` | `wiki-query` |
 | `a-inf status` | deterministic CLI |

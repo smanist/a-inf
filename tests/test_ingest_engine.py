@@ -100,10 +100,88 @@ def page_plan(source: Path, *, action: str = "create", path: str = "concepts/det
     }
 
 
+def url_plan(
+    url: str,
+    markdown: str,
+    *,
+    action: str = "create",
+    path: str = "references/web-example-com-article.md",
+) -> dict[str, object]:
+    digest = ingest.hash_bytes(markdown.encode("utf-8"))
+    now = "2026-05-05T12:00:00+00:00"
+    return {
+        "version": 1,
+        "mode": "append",
+        "sources": [
+            {
+                "path": url,
+                "manifest_key": url,
+                "source_type": "url",
+                "source_url": url,
+                "content_hash": digest,
+                "project": None,
+                "pages_created": [path] if action == "create" else [],
+                "pages_updated": [path] if action == "update" else [],
+            }
+        ],
+        "pages": [
+            {
+                "action": action,
+                "path": path,
+                "frontmatter": {
+                    "title": "Example Article",
+                    "category": "references",
+                    "tags": ["web"],
+                    "sources": [url],
+                    "source_url": url,
+                    "summary": "A URL reference extracted through defuddle.",
+                    "provenance": {"extracted": 1.0, "inferred": 0.0, "ambiguous": 0.0},
+                    "base_confidence": 0.4,
+                    "lifecycle": "draft",
+                    "lifecycle_changed": "2026-05-05",
+                    "created": now,
+                    "updated": now,
+                },
+                "body": "# Example Article\n\nDefuddle provided markdown for planning.",
+                "links": [],
+                "source_refs": [url],
+            }
+        ],
+        "hot_update": {
+            "recent_activity": ["Ingested Example Article from the web."],
+            "active_threads": [],
+            "key_takeaways": ["URL ingest uses deterministic extraction."],
+            "flagged_contradictions": [],
+        },
+        "warnings": [],
+    }
+
+
+def fake_run_with_defuddle(markdown: str) -> object:
+    def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        if command[-1] == "--version":
+            return subprocess.CompletedProcess(command, 0, stdout="qmd 2.1.0\n", stderr="")
+        if command[1:] == ["collection", "show", "vault"]:
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        if command[1:] in (["update"], ["embed"]):
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        if command[:2] == ["/usr/local/bin/defuddle", "parse"] and command[-1] == "--md":
+            return subprocess.CompletedProcess(command, 0, stdout=markdown, stderr="")
+        raise AssertionError(f"unexpected command: {command}")
+
+    return fake_run
+
+
 def test_ingest_print_prompt_emits_packet_without_writes(tmp_path: Path, monkeypatch, capsys) -> None:
     isolate_qmd_home(tmp_path, monkeypatch)
     vault = make_vault(tmp_path)
-    (vault / ".env").write_text("QMD_WIKI_COLLECTION=vault\nQMD_PAPERS_COLLECTION=vault\n", encoding="utf-8")
+    configured_sources = tmp_path / "configured-sources"
+    configured_sources.mkdir()
+    (configured_sources / "note.md").write_text("do not include during explicit URL ingest\n", encoding="utf-8")
+    (vault / ".env").write_text(
+        f"QMD_WIKI_COLLECTION=vault\nQMD_PAPERS_COLLECTION=vault\nOBSIDIAN_SOURCES_DIR={configured_sources}\n",
+        encoding="utf-8",
+    )
     source = vault / "note.md"
     source.write_text("hybrid ingest\n", encoding="utf-8")
     args = IngestArgs([str(source)])
@@ -132,6 +210,8 @@ def test_ingest_print_prompt_emits_packet_without_writes(tmp_path: Path, monkeyp
     assert packet["qmd_papers_collection"] == "vault"
     assert packet["sources"][0]["content_hash"] == ingest.hash_file(source)
     assert "codex_prompt" in packet
+    assert "wiki-ingest skill instructions:" in packet["codex_prompt"]
+    assert "# Obsidian Ingest Planner" in packet["codex_prompt"]
     assert "do not run `qmd query`" in packet["codex_prompt"]
     assert "qmd search --json -n 5" in packet["codex_prompt"]
     assert not (vault / ".a-inf" / "runs").exists()
@@ -213,6 +293,77 @@ def test_html_extract_is_added_to_source_packet(tmp_path: Path, monkeypatch, cap
     assert "html_preview" not in packet["sources"][0]
 
 
+def test_url_source_packet_uses_defuddle_markdown(tmp_path: Path, monkeypatch, capsys) -> None:
+    isolate_qmd_home(tmp_path, monkeypatch)
+    vault = make_vault(tmp_path)
+    (vault / ".env").write_text("QMD_WIKI_COLLECTION=vault\nQMD_PAPERS_COLLECTION=vault\n", encoding="utf-8")
+    url = "https://example.com/article"
+    markdown = "# Example Article\n\nFetched body."
+    args = IngestArgs([url])
+    args.print_prompt = True
+
+    monkeypatch.chdir(vault)
+    monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}" if name in {"defuddle", "qmd"} else None)
+    monkeypatch.setattr(qmd_module.shutil, "which", lambda name: f"/usr/local/bin/{name}" if name in {"defuddle", "qmd"} else None)
+    monkeypatch.setattr(ingest.subprocess, "run", fake_run_with_defuddle(markdown))
+    monkeypatch.setattr(ingest.subprocess, "call", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("codex called")))
+
+    assert cli.cmd_dispatch(args) == 0
+    packet = json.loads(capsys.readouterr().out)
+    assert len(packet["sources"]) == 1
+    source = packet["sources"][0]
+    assert source["path"] == url
+    assert source["manifest_key"] == url
+    assert source["source_type"] == "url"
+    assert source["source_url"] == url
+    assert source["url_markdown"] == markdown
+    assert source["target_path"] == "references/web-example-com-article.md"
+    assert source["content_hash"] == ingest.hash_bytes(markdown.encode("utf-8"))
+    assert "url_markdown" in packet["codex_prompt"]
+    assert not (vault / ".a-inf" / "runs").exists()
+
+
+def test_url_ingest_fails_before_planning_when_defuddle_is_missing(tmp_path: Path, monkeypatch) -> None:
+    isolate_qmd_home(tmp_path, monkeypatch)
+    vault = make_vault(tmp_path)
+    args = IngestArgs(["https://example.com/article"])
+
+    monkeypatch.chdir(vault)
+    monkeypatch.setattr(ingest.shutil, "which", lambda name: None if name == "defuddle" else f"/usr/local/bin/{name}")
+    monkeypatch.setattr(ingest.subprocess, "run", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("subprocess.run called")))
+    monkeypatch.setattr(ingest.subprocess, "call", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("codex called")))
+
+    assert cli.cmd_dispatch(args) == 1
+    assert not (vault / ".a-inf" / "runs").exists()
+
+
+def test_url_ingest_fails_before_planning_when_defuddle_fails_or_empty(tmp_path: Path, monkeypatch) -> None:
+    isolate_qmd_home(tmp_path, monkeypatch)
+    vault = make_vault(tmp_path)
+    args = IngestArgs(["https://example.com/article"])
+
+    monkeypatch.chdir(vault)
+    monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(ingest.subprocess, "call", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("codex called")))
+    monkeypatch.setattr(
+        ingest.subprocess,
+        "run",
+        lambda command, **_kwargs: subprocess.CompletedProcess(command, 2, stdout="", stderr="network failed"),
+    )
+
+    assert cli.cmd_dispatch(args) == 1
+    assert not (vault / ".a-inf" / "runs").exists()
+
+    monkeypatch.setattr(
+        ingest.subprocess,
+        "run",
+        lambda command, **_kwargs: subprocess.CompletedProcess(command, 0, stdout="  \n", stderr=""),
+    )
+
+    assert cli.cmd_dispatch(args) == 1
+    assert not (vault / ".a-inf" / "runs").exists()
+
+
 def test_ingest_valid_plan_applies_pages_and_special_files(tmp_path: Path, monkeypatch) -> None:
     isolate_qmd_home(tmp_path, monkeypatch)
     vault = make_vault(tmp_path)
@@ -246,6 +397,43 @@ def test_ingest_valid_plan_applies_pages_and_special_files(tmp_path: Path, monke
     assert " - A deterministic shell around semantic wiki ingest." in index
     assert "INGEST" in (vault / "log.md").read_text(encoding="utf-8")
     assert "Apply is deterministic." in (vault / "hot.md").read_text(encoding="utf-8")
+
+
+def test_url_ingest_valid_plan_applies_reference_and_manifest(tmp_path: Path, monkeypatch) -> None:
+    isolate_qmd_home(tmp_path, monkeypatch)
+    vault = make_vault(tmp_path)
+    (vault / ".env").write_text("QMD_WIKI_COLLECTION=vault\nQMD_PAPERS_COLLECTION=vault\n", encoding="utf-8")
+    url = "https://example.com/article"
+    markdown = "# Example Article\n\nFetched body."
+    args = IngestArgs([url])
+
+    def fake_call(command: list[str], cwd: Path, env: dict[str, str] | None = None) -> int:
+        assert command[0] == "/usr/local/bin/codex"
+        match = re.search(r"Write exactly one JSON file at this path: (.+)", command[-1])
+        assert match
+        plan_path = Path(match.group(1).strip())
+        plan_path.parent.mkdir(parents=True, exist_ok=True)
+        plan_path.write_text(json.dumps(url_plan(url, markdown)), encoding="utf-8")
+        return 0
+
+    monkeypatch.chdir(vault)
+    monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(qmd_module.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(ingest.subprocess, "run", fake_run_with_defuddle(markdown))
+    monkeypatch.setattr(ingest.subprocess, "call", fake_call)
+
+    assert cli.cmd_dispatch(args) == 0
+    page = vault / "references" / "web-example-com-article.md"
+    assert page.is_file()
+    manifest = json.loads((vault / ".manifest.json").read_text(encoding="utf-8"))
+    assert url in manifest["sources"]
+    assert manifest["sources"][url]["source_type"] == "url"
+    assert manifest["sources"][url]["source_url"] == url
+    assert manifest["sources"][url]["pages_created"] == ["references/web-example-com-article.md"]
+    index = (vault / "index.md").read_text(encoding="utf-8")
+    assert "[[references/web-example-com-article|Example Article]]" in index
+    assert "INGEST" in (vault / "log.md").read_text(encoding="utf-8")
+    assert "URL ingest uses deterministic extraction." in (vault / "hot.md").read_text(encoding="utf-8")
 
 
 def test_ingest_missing_qmd_fails_before_codex(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -355,7 +543,77 @@ def test_append_mode_skips_unchanged_sources_in_packet(tmp_path: Path, monkeypat
     assert packet["sources"] == []
 
 
-def test_url_and_data_ingest_keep_dispatch_path(tmp_path: Path, monkeypatch) -> None:
+def test_append_mode_skips_unchanged_url_sources_in_packet(tmp_path: Path, monkeypatch, capsys) -> None:
+    isolate_qmd_home(tmp_path, monkeypatch)
+    vault = make_vault(tmp_path)
+    url = "https://example.com/article"
+    markdown = "# Example Article\n\nFetched body."
+    now = "2026-05-05T12:00:00+00:00"
+    manifest = {
+        "version": 1,
+        "sources": {
+            url: {
+                "ingested_at": now,
+                "modified_at": now,
+                "content_hash": ingest.hash_bytes(markdown.encode("utf-8")),
+                "size_bytes": len(markdown.encode("utf-8")),
+                "source_type": "url",
+                "source_url": url,
+            }
+        },
+        "projects": {},
+        "stats": {},
+    }
+    (vault / ".manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    args = IngestArgs([url])
+    args.print_prompt = True
+
+    monkeypatch.chdir(vault)
+    monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}" if name in {"defuddle", "qmd"} else None)
+    monkeypatch.setattr(qmd_module.shutil, "which", lambda name: f"/usr/local/bin/{name}" if name in {"defuddle", "qmd"} else None)
+    monkeypatch.setattr(ingest.subprocess, "run", fake_run_with_defuddle(markdown))
+
+    assert cli.cmd_dispatch(args) == 0
+    packet = json.loads(capsys.readouterr().out)
+    assert packet["sources"] == []
+
+
+def test_append_mode_includes_modified_url_sources_in_packet(tmp_path: Path, monkeypatch, capsys) -> None:
+    isolate_qmd_home(tmp_path, monkeypatch)
+    vault = make_vault(tmp_path)
+    url = "https://example.com/article"
+    markdown = "# Example Article\n\nFetched body."
+    manifest = {
+        "version": 1,
+        "sources": {
+            url: {
+                "ingested_at": "2026-05-05T12:00:00+00:00",
+                "modified_at": "2026-05-05T12:00:00+00:00",
+                "content_hash": ingest.hash_bytes(b"old body"),
+                "size_bytes": 8,
+                "source_type": "url",
+                "source_url": url,
+            }
+        },
+        "projects": {},
+        "stats": {},
+    }
+    (vault / ".manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    args = IngestArgs([url])
+    args.print_prompt = True
+
+    monkeypatch.chdir(vault)
+    monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}" if name in {"defuddle", "qmd"} else None)
+    monkeypatch.setattr(qmd_module.shutil, "which", lambda name: f"/usr/local/bin/{name}" if name in {"defuddle", "qmd"} else None)
+    monkeypatch.setattr(ingest.subprocess, "run", fake_run_with_defuddle(markdown))
+
+    assert cli.cmd_dispatch(args) == 0
+    packet = json.loads(capsys.readouterr().out)
+    assert packet["sources"][0]["manifest_key"] == url
+    assert packet["sources"][0]["status"] == "modified"
+
+
+def test_url_ingest_uses_hybrid_path_and_data_ingest_keeps_dispatch_path(tmp_path: Path, monkeypatch) -> None:
     vault = make_vault(tmp_path)
     calls: list[str] = []
 
@@ -363,14 +621,19 @@ def test_url_and_data_ingest_keep_dispatch_path(tmp_path: Path, monkeypatch) -> 
         calls.append(dispatch.skill)
         return 0
 
+    def fake_run_hybrid(_args: object, _vault: Path) -> int:
+        calls.append("wiki-ingest")
+        return 0
+
     monkeypatch.chdir(vault)
     monkeypatch.setattr(cli, "run_dispatch", fake_run_dispatch)
+    monkeypatch.setattr(ingest, "run_hybrid_ingest", fake_run_hybrid)
 
     assert cli.cmd_dispatch(IngestArgs(["https://example.com/article"])) == 0
     data_args = IngestArgs(["export.json"])
     data_args.data = True
     assert cli.cmd_dispatch(data_args) == 0
-    assert calls == ["ingest-url", "data-ingest"]
+    assert calls == ["wiki-ingest", "data-ingest"]
 
 
 def test_raw_delete_outside_raw_dir_is_rejected(tmp_path: Path) -> None:

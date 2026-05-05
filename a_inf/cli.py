@@ -34,7 +34,6 @@ VAULT_DIRS = [
 
 SKILL_ALIASES = {
     "ingest": "wiki-ingest",
-    "ingest-url": "ingest-url",
     "data-ingest": "data-ingest",
     "query": "wiki-query",
     "update": "wiki-update",
@@ -54,7 +53,6 @@ SKILL_ALIASES = {
 
 QMD_SYNC_SKILLS = {
     "wiki-ingest",
-    "ingest-url",
     "data-ingest",
     "wiki-update",
     "codex-history-ingest",
@@ -865,8 +863,6 @@ def infer_ingest_skill(workflow_args: list[str], data: bool = False) -> str:
     non_options = [arg for arg in workflow_args if not arg.startswith("-")]
     if data:
         return "data-ingest"
-    if len(non_options) == 1 and is_url(non_options[0]):
-        return "ingest-url"
     return "wiki-ingest"
 
 
