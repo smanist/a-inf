@@ -6,12 +6,14 @@
 
 ```bash
 pip install -e .
+npm install -g @tobilu/qmd
 ```
 
 Verify:
 
 ```bash
 a-inf --help
+qmd --version
 ```
 
 ## Initialize A Vault
@@ -40,6 +42,8 @@ Initialization creates:
 - vault folders: `concepts/`, `entities/`, `skills/`, `references/`, `synthesis/`, `journal/`, `projects/`, `_archives/`, `_raw/`
 - `.skills/<skill-name>` symlinks to this checkout's bundled skills
 - an `a-inf` section in `AGENTS.md`, unless `--no-agents` is passed
+
+The generated `.env` defaults `QMD_WIKI_COLLECTION` and `QMD_PAPERS_COLLECTION` to the initialized repo directory name.
 
 Use `--copy-skills` if symlinks are not appropriate:
 
@@ -126,7 +130,7 @@ skills_source = "/path/to/a-inf/.skills"
 link_format = "wikilink"
 ```
 
-`a-inf init` also writes `.env` when absent so existing skills keep working while the migration is in progress. Legacy global config is still available through `~/.obsidian-wiki/config`.
+`a-inf init` also writes `.env` when absent so existing skills keep working while the migration is in progress. QMD collection values default to the initialized repo name. Legacy global config is still available through `~/.obsidian-wiki/config`.
 
 ## Open In Obsidian
 

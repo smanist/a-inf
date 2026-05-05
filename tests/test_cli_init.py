@@ -41,6 +41,9 @@ def test_init_creates_vault_structure_and_local_skill_links(tmp_path: Path) -> N
 
     assert (vault / ".a-inf" / "config.toml").is_file()
     assert (vault / ".env").is_file()
+    env = (vault / ".env").read_text(encoding="utf-8")
+    assert f"QMD_WIKI_COLLECTION={vault.name}" in env
+    assert f"QMD_PAPERS_COLLECTION={vault.name}" in env
     assert (vault / "index.md").is_file()
     assert (vault / "log.md").is_file()
     assert (vault / "hot.md").is_file()
@@ -48,7 +51,10 @@ def test_init_creates_vault_structure_and_local_skill_links(tmp_path: Path) -> N
     assert (vault / "AGENTS.md").read_text(encoding="utf-8").count("<!-- BEGIN A-INF -->") == 1
     gitignore = (vault / ".gitignore").read_text(encoding="utf-8")
     assert "# a-inf local configuration" in gitignore
-    assert ".a-inf/runs/" in gitignore
+    assert ".DS_Store" in gitignore
+    assert "_raw/" in gitignore
+    assert ".env" in gitignore
+    assert ".a-inf/" in gitignore
 
     manifest = json.loads((vault / ".manifest.json").read_text(encoding="utf-8"))
     assert manifest["version"] == 1
@@ -87,4 +93,7 @@ def test_init_upgrades_existing_gitignore_section(tmp_path: Path) -> None:
 
     gitignore = (vault / ".gitignore").read_text(encoding="utf-8")
     assert gitignore.count("# a-inf local configuration") == 1
-    assert ".a-inf/runs/" in gitignore
+    assert ".DS_Store" in gitignore
+    assert "_raw/" in gitignore
+    assert ".env" in gitignore
+    assert ".a-inf/" in gitignore

@@ -24,6 +24,11 @@ class IngestArgs:
         self.args = args
 
 
+def fake_qmd_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+    assert command[-1] == "--version"
+    return subprocess.CompletedProcess(command, 0, stdout="qmd 2.1.0\n", stderr="")
+
+
 def make_vault(tmp_path: Path) -> Path:
     vault = tmp_path / "vault"
     for dirname in ["concepts", "entities", "skills", "references", "synthesis", "journal", "projects", "_raw"]:
@@ -86,17 +91,28 @@ def page_plan(source: Path, *, action: str = "create", path: str = "concepts/det
 
 def test_ingest_print_prompt_emits_packet_without_writes(tmp_path: Path, monkeypatch, capsys) -> None:
     vault = make_vault(tmp_path)
+    (vault / ".env").write_text("QMD_WIKI_COLLECTION=vault\nQMD_PAPERS_COLLECTION=vault\n", encoding="utf-8")
     source = vault / "note.md"
     source.write_text("hybrid ingest\n", encoding="utf-8")
     args = IngestArgs([str(source)])
     args.print_prompt = True
 
     monkeypatch.chdir(vault)
+    monkeypatch.setattr(ingest.shutil, "which", lambda name: "/usr/local/bin/qmd" if name == "qmd" else None)
+    monkeypatch.setattr(ingest.subprocess, "run", fake_qmd_run)
     monkeypatch.setattr(subprocess, "call", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("codex called")))
 
     assert cli.cmd_dispatch(args) == 0
     packet = json.loads(capsys.readouterr().out)
     assert packet["mode"] == "append"
+    assert packet["qmd"] == {
+        "binary": "/usr/local/bin/qmd",
+        "version": "qmd 2.1.0",
+        "wiki_collection": "vault",
+        "papers_collection": "vault",
+    }
+    assert packet["qmd_wiki_collection"] == "vault"
+    assert packet["qmd_papers_collection"] == "vault"
     assert packet["sources"][0]["content_hash"] == ingest.hash_file(source)
     assert "codex_prompt" in packet
     assert not (vault / ".a-inf" / "runs").exists()
@@ -109,6 +125,7 @@ def test_ingest_valid_plan_applies_pages_and_special_files(tmp_path: Path, monke
     args = IngestArgs([str(source)])
 
     def fake_call(command: list[str], cwd: Path) -> int:
+        assert command[0] == "/usr/local/bin/codex"
         match = re.search(r"Write exactly one JSON file at this path: (.+)", command[-1])
         assert match
         plan_path = Path(match.group(1).strip())
@@ -117,7 +134,8 @@ def test_ingest_valid_plan_applies_pages_and_special_files(tmp_path: Path, monke
         return 0
 
     monkeypatch.chdir(vault)
-    monkeypatch.setattr(ingest.shutil, "which", lambda _: "/usr/local/bin/codex")
+    monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(ingest.subprocess, "run", fake_qmd_run)
     monkeypatch.setattr(ingest.subprocess, "call", fake_call)
 
     assert cli.cmd_dispatch(args) == 0
@@ -131,6 +149,49 @@ def test_ingest_valid_plan_applies_pages_and_special_files(tmp_path: Path, monke
     assert " - A deterministic shell around semantic wiki ingest." in index
     assert "INGEST" in (vault / "log.md").read_text(encoding="utf-8")
     assert "Apply is deterministic." in (vault / "hot.md").read_text(encoding="utf-8")
+
+
+def test_ingest_missing_qmd_fails_before_codex(tmp_path: Path, monkeypatch, capsys) -> None:
+    vault = make_vault(tmp_path)
+    source = vault / "note.md"
+    source.write_text("hybrid ingest\n", encoding="utf-8")
+    args = IngestArgs([str(source)])
+
+    monkeypatch.chdir(vault)
+    monkeypatch.setattr(ingest.shutil, "which", lambda name: None if name == "qmd" else "/usr/local/bin/codex")
+    monkeypatch.setattr(ingest.subprocess, "call", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("codex called")))
+
+    assert cli.cmd_dispatch(args) == 127
+    assert "npm install -g @tobilu/qmd" in capsys.readouterr().err
+
+
+def test_ingest_checks_qmd_version_before_codex(tmp_path: Path, monkeypatch) -> None:
+    vault = make_vault(tmp_path)
+    source = vault / "note.md"
+    source.write_text("hybrid ingest\n", encoding="utf-8")
+    args = IngestArgs([str(source)])
+    calls: list[str] = []
+
+    def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append("qmd")
+        return subprocess.CompletedProcess(command, 0, stdout="qmd 2.1.0\n", stderr="")
+
+    def fake_call(command: list[str], cwd: Path) -> int:
+        calls.append("codex")
+        match = re.search(r"Write exactly one JSON file at this path: (.+)", command[-1])
+        assert match
+        plan_path = Path(match.group(1).strip())
+        plan_path.parent.mkdir(parents=True, exist_ok=True)
+        plan_path.write_text(json.dumps(page_plan(source)), encoding="utf-8")
+        return 0
+
+    monkeypatch.chdir(vault)
+    monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(ingest.subprocess, "run", fake_run)
+    monkeypatch.setattr(ingest.subprocess, "call", fake_call)
+
+    assert cli.cmd_dispatch(args) == 0
+    assert calls == ["qmd", "codex"]
 
 
 def test_ingest_invalid_plan_fails_without_wiki_writes(tmp_path: Path, monkeypatch) -> None:
@@ -149,7 +210,8 @@ def test_ingest_invalid_plan_fails_without_wiki_writes(tmp_path: Path, monkeypat
         return 0
 
     monkeypatch.chdir(vault)
-    monkeypatch.setattr(ingest.shutil, "which", lambda _: "/usr/local/bin/codex")
+    monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(ingest.subprocess, "run", fake_qmd_run)
     monkeypatch.setattr(ingest.subprocess, "call", fake_call)
 
     assert cli.cmd_dispatch(args) == 1

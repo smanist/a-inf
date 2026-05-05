@@ -37,7 +37,8 @@ The deterministic engine supplies the run packet in the prompt:
 - `sources`: selected source files with absolute path, manifest key, source type, size, modified time, content hash, status, and reason.
 - `existing_pages`: cheap page metadata from frontmatter summaries.
 - `manifest_source_count`, `index.md`, recent `log.md`, and vault `AGENTS.md` context.
-- `qmd_papers_collection`: optional collection name for related-source discovery.
+- `qmd`: required QMD CLI metadata supplied by the deterministic engine.
+- `qmd_wiki_collection` and `qmd_papers_collection`: collection names for related-source discovery.
 
 Python has already selected the sources. Do not re-run append/full/raw filtering and do not skip selected
 sources unless you cannot read them; if a source cannot be interpreted, include it in `sources`, leave both
@@ -52,15 +53,17 @@ page lists empty, and explain the issue in `warnings`.
 
 For images and scanned PDFs, most conceptual meaning is inferred. Mark those claims with `^[inferred]`; mark unclear text, uncertain arrow direction, cropped context, or source disagreement with `^[ambiguous]`.
 
-## Optional QMD Discovery
+## QMD Discovery
 
-If `qmd_papers_collection` is non-empty and relevant tools are available, query it for related papers before finalizing the plan:
+If `qmd_wiki_collection` or `qmd_papers_collection` is non-empty, query QMD before finalizing the plan. Use `qmd query -c <collection>` when shell access is available, or the QMD MCP tools when provided.
 
-- semantic query for the source topic or thesis.
-- lexical query for key terms, author names, methods, libraries, or organizations.
+- Query the wiki collection for existing related pages, recurring themes, and link targets.
+- Query the papers collection for related source material, contradictions, and source-backed terminology.
+- Use a semantic query for the source topic or thesis.
+- Use a lexical query for key terms, author names, methods, libraries, or organizations.
 
-Use results only to improve page linking, identify recurring themes, or mark contradictions. If QMD is unavailable,
-continue without it and optionally note that in `warnings`.
+Use results only to improve page linking, identify recurring themes, or mark contradictions. If QMD fails despite
+being configured, continue without it and include the failure in `warnings`.
 
 ## Planning Rules
 

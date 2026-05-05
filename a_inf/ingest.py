@@ -89,6 +89,14 @@ class IngestRun:
 
 
 @dataclass(frozen=True)
+class QmdInfo:
+    binary: str
+    version: str
+    wiki_collection: str
+    papers_collection: str
+
+
+@dataclass(frozen=True)
 class ValidatedPlan:
     raw: dict[str, Any]
     pages: list[dict[str, Any]]
@@ -107,15 +115,19 @@ def run_hybrid_ingest(args: Any, vault: Path) -> int:
         config = load_wiki_config(vault)
         manifest, _ = read_manifest(vault)
         sources = select_sources(vault, config, manifest, list(getattr(args, "args", [])), mode)
+        qmd = resolve_qmd(config)
         run = make_run(vault)
-        prompt = build_codex_prompt(vault, config, manifest, sources, run, mode)
+        prompt = build_codex_prompt(vault, config, manifest, sources, run, mode, qmd)
 
         if getattr(args, "print_prompt", False) or getattr(args, "no_codex", False):
-            print_run_packet(vault, config, sources, run, mode, prompt)
+            print_run_packet(vault, config, sources, run, mode, prompt, qmd)
             return 0
 
+        if not require_qmd(qmd):
+            return 127
+
         run.run_dir.mkdir(parents=True, exist_ok=True)
-        write_json(run.run_dir / "packet.json", run_packet(vault, config, sources, run, mode, prompt))
+        write_json(run.run_dir / "packet.json", run_packet(vault, config, sources, run, mode, prompt, qmd))
 
         if not sources:
             print("No sources selected for ingest.")
@@ -124,7 +136,7 @@ def run_hybrid_ingest(args: Any, vault: Path) -> int:
         codex_bin = shutil.which(getattr(args, "codex_bin", "codex"))
         if codex_bin is None:
             print("Codex executable not found. Re-run with --print-prompt or install Codex CLI.", file=sys.stderr)
-            print_run_packet(vault, config, sources, run, mode, prompt)
+            print_run_packet(vault, config, sources, run, mode, prompt, qmd)
             return 127
 
         command = [
@@ -135,7 +147,7 @@ def run_hybrid_ingest(args: Any, vault: Path) -> int:
             "--cd",
             str(vault),
         ]
-        for directory in codex_add_dirs(vault, sources, list(getattr(args, "add_dir", []))):
+        for directory in codex_add_dirs(vault, sources, list(getattr(args, "add_dir", [])), qmd):
             command.extend(["--add-dir", str(directory)])
         command.append(prompt)
 
@@ -160,6 +172,41 @@ def run_hybrid_ingest(args: Any, vault: Path) -> int:
     finally:
         if run is not None and run.run_dir.exists():
             prune_runs(vault)
+
+
+def resolve_qmd(config: dict[str, str]) -> QmdInfo | None:
+    qmd_bin = shutil.which("qmd")
+    if qmd_bin is None:
+        return None
+    try:
+        result = subprocess.run(
+            [qmd_bin, "--version"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return None
+    if result.returncode != 0:
+        return None
+    output = (result.stdout or result.stderr).strip()
+    version = output.splitlines()[0] if output else ""
+    return QmdInfo(
+        binary=qmd_bin,
+        version=version,
+        wiki_collection=config.get("QMD_WIKI_COLLECTION") or "",
+        papers_collection=config.get("QMD_PAPERS_COLLECTION") or "",
+    )
+
+
+def require_qmd(qmd: QmdInfo | None) -> bool:
+    if qmd is not None:
+        return True
+    print(
+        "qmd executable not found or not usable. Install it with `npm install -g @tobilu/qmd`.",
+        file=sys.stderr,
+    )
+    return False
 
 
 def resolve_mode(args: Any) -> str:
@@ -383,18 +430,20 @@ def build_codex_prompt(
     sources: list[IngestSource],
     run: IngestRun,
     mode: str,
+    qmd: QmdInfo | None,
 ) -> str:
     summaries = read_frontmatter_summaries(vault)
     agents = read_optional(vault / "AGENTS.md")
     index = read_optional(vault / "index.md")
     log_tail = "\n".join(read_optional(vault / "log.md").splitlines()[-25:])
-    qmd = config.get("QMD_PAPERS_COLLECTION") or ""
     packet = {
         "vault": str(vault),
         "mode": mode,
         "plan_path": str(run.plan_path),
         "link_format": config.get("OBSIDIAN_LINK_FORMAT", "wikilink"),
-        "qmd_papers_collection": qmd,
+        "qmd": qmd_to_json(qmd),
+        "qmd_wiki_collection": config.get("QMD_WIKI_COLLECTION") or "",
+        "qmd_papers_collection": config.get("QMD_PAPERS_COLLECTION") or "",
         "sources": [source_to_json(source) for source in sources],
         "existing_pages": summaries,
         "manifest_source_count": len(manifest.get("sources", {}) if isinstance(manifest.get("sources"), dict) else {}),
@@ -475,6 +524,17 @@ def source_to_json(source: IngestSource) -> dict[str, Any]:
     }
 
 
+def qmd_to_json(qmd: QmdInfo | None) -> dict[str, str] | None:
+    if qmd is None:
+        return None
+    return {
+        "binary": qmd.binary,
+        "version": qmd.version,
+        "wiki_collection": qmd.wiki_collection,
+        "papers_collection": qmd.papers_collection,
+    }
+
+
 def read_optional(path: Path) -> str:
     if not path.exists():
         return ""
@@ -506,42 +566,71 @@ def read_frontmatter_summaries(vault: Path) -> list[dict[str, Any]]:
 
 
 def print_run_packet(
-    vault: Path, config: dict[str, str], sources: list[IngestSource], run: IngestRun, mode: str, prompt: str
+    vault: Path,
+    config: dict[str, str],
+    sources: list[IngestSource],
+    run: IngestRun,
+    mode: str,
+    prompt: str,
+    qmd: QmdInfo | None,
 ) -> None:
-    print(json.dumps(run_packet(vault, config, sources, run, mode, prompt), indent=2))
+    print(json.dumps(run_packet(vault, config, sources, run, mode, prompt, qmd), indent=2))
 
 
 def run_packet(
-    vault: Path, config: dict[str, str], sources: list[IngestSource], run: IngestRun, mode: str, prompt: str
+    vault: Path,
+    config: dict[str, str],
+    sources: list[IngestSource],
+    run: IngestRun,
+    mode: str,
+    prompt: str,
+    qmd: QmdInfo | None,
 ) -> dict[str, Any]:
     return {
         "vault": str(vault),
         "mode": mode,
         "plan_path": str(run.plan_path),
         "link_format": config.get("OBSIDIAN_LINK_FORMAT", "wikilink"),
+        "qmd": qmd_to_json(qmd),
+        "qmd_wiki_collection": config.get("QMD_WIKI_COLLECTION") or "",
+        "qmd_papers_collection": config.get("QMD_PAPERS_COLLECTION") or "",
         "sources": [source_to_json(source) for source in sources],
         "codex_prompt": prompt,
     }
 
 
-def codex_add_dirs(vault: Path, sources: list[IngestSource], extra: list[str]) -> list[Path]:
+def codex_add_dirs(
+    vault: Path,
+    sources: list[IngestSource],
+    extra: list[str],
+    qmd: QmdInfo | None = None,
+) -> list[Path]:
     dirs: list[Path] = []
     seen: set[Path] = set()
+
+    def add_dir(path: Path) -> None:
+        resolved = path.expanduser().resolve()
+        if resolved not in seen:
+            dirs.append(resolved)
+            seen.add(resolved)
+
     for raw in extra:
-        path = Path(raw).expanduser().resolve()
-        if path not in seen:
-            dirs.append(path)
-            seen.add(path)
+        add_dir(Path(raw))
     for source in sources:
         try:
             source.path.relative_to(vault)
             continue
         except ValueError:
             parent = source.path.parent.resolve()
-            if parent not in seen:
-                dirs.append(parent)
-                seen.add(parent)
+            add_dir(parent)
+    qmd_cache = qmd_cache_dir()
+    if qmd is not None and qmd_cache.exists():
+        add_dir(qmd_cache)
     return dirs
+
+
+def qmd_cache_dir() -> Path:
+    return Path.home() / ".cache" / "qmd"
 
 
 def read_plan(path: Path) -> dict[str, Any]:

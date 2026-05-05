@@ -8,9 +8,10 @@ The markdown skills in `.skills/` are still the workflow specs, but users should
 
 ```bash
 pip install -e .
+npm install -g @tobilu/qmd
 ```
 
-This exposes the `a-inf` command from the current checkout.
+This exposes the `a-inf` command from the current checkout. `qmd` is a required runtime CLI dependency for `a-inf ingest`.
 
 ## Quick Start
 
@@ -24,7 +25,7 @@ a-inf insights
 a-inf query "what do I know about rate limiting?"
 ```
 
-`a-inf init` is local and deterministic. It creates the vault folders, seed files, `.a-inf/config.toml`, a compatibility `.env`, Obsidian config, `.gitignore` entries for local config, and local skill symlinks under `.skills/`.
+`a-inf init` is local and deterministic. It creates the vault folders, seed files, `.a-inf/config.toml`, a compatibility `.env`, Obsidian config, `.gitignore` entries for local config, and local skill symlinks under `.skills/`. New `.env` files default `QMD_WIKI_COLLECTION` and `QMD_PAPERS_COLLECTION` to the repo directory name.
 
 `a-inf ingest` now runs a hybrid deterministic engine: Python selects sources, computes hashes, asks Codex for a JSON ingest plan, validates the whole plan, and only then writes wiki files. Other synthesis-heavy commands still dispatch to Codex with the matching skill. Use `--print-prompt` to inspect the generated ingest packet or dispatch prompt instead:
 
@@ -116,7 +117,7 @@ skills_source = "/absolute/path/to/a-inf/.skills"
 link_format = "wikilink"
 ```
 
-It also writes a minimal `.env` when one does not already exist, because some skills still read legacy env config during the migration. `.a-inf/config.toml` is the CLI-native config.
+It also writes a minimal `.env` when one does not already exist, because some skills still read legacy env config during the migration. `.a-inf/config.toml` is the CLI-native config. The generated QMD collection values default to the initialized repo name.
 
 Optional environment variables from `.env.example` still apply for skill workflows, including:
 

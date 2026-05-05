@@ -930,12 +930,13 @@ def ensure_agents_section(path: Path) -> None:
 
 
 def ensure_gitignore_section(path: Path) -> None:
-    required_entries = [".env", ".a-inf/config.toml", ".a-inf/runs/"]
+    required_entries = [".DS_Store", "_raw/", ".env", ".a-inf/"]
     section = "\n".join(["# a-inf local configuration", *required_entries, ""])
     if path.exists():
         current = path.read_text(encoding="utf-8")
         if "# a-inf local configuration" in current:
-            missing = [entry for entry in required_entries if entry not in current]
+            current_entries = {line.strip() for line in current.splitlines()}
+            missing = [entry for entry in required_entries if entry not in current_entries]
             if missing:
                 path.write_text(current.rstrip() + "\n" + "\n".join(missing) + "\n", encoding="utf-8")
             return
@@ -1037,8 +1038,8 @@ CODEX_HISTORY_PATH=
 LINT_SCHEDULE=weekly
 OBSIDIAN_LINK_FORMAT=wikilink
 OBSIDIAN_RAW_DIR=_raw
-QMD_WIKI_COLLECTION=
-QMD_PAPERS_COLLECTION=
+QMD_WIKI_COLLECTION={vault.name}
+QMD_PAPERS_COLLECTION={vault.name}
 """
 
 
