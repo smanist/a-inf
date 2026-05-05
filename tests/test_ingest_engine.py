@@ -118,6 +118,81 @@ def test_ingest_print_prompt_emits_packet_without_writes(tmp_path: Path, monkeyp
     assert not (vault / ".a-inf" / "runs").exists()
 
 
+def test_html_extract_extracts_title_headings_sections_and_visible_text() -> None:
+    html = """
+    <!doctype html>
+    <html>
+      <head>
+        <title>Adjuster Notes</title>
+        <style>.hidden { color: red; }</style>
+        <script>window.secret = "skip me";</script>
+      </head>
+      <body>
+        <h1>Claim Adjustment</h1>
+        <p>Durable visible text.</p>
+        <h2>Reserve Review</h2>
+        <noscript>Do not include fallback text.</noscript>
+      </body>
+    </html>
+    """
+
+    extract = ingest.parse_html_extract(html)
+
+    assert extract["title"] == "Adjuster Notes"
+    assert extract["headings"] == [
+        {"tag": "h1", "text": "Claim Adjustment"},
+        {"tag": "h2", "text": "Reserve Review"},
+    ]
+    assert extract["sections"][0]["heading"] == "Claim Adjustment"
+    assert "Durable visible text." in extract["sections"][0]["text"]
+    assert "Durable visible text." in extract["text_sample"]
+    assert "skip me" not in extract["text_sample"]
+    assert "fallback text" not in extract["text_sample"]
+
+
+def test_html_extract_captures_later_sections() -> None:
+    middle = "\n".join(f"<p>Filler {index}</p>" for index in range(100))
+    html = f"""
+    <html>
+      <head><title>Long Notes</title></head>
+      <body>
+        <h2>Early</h2>
+        <p>Early detail.</p>
+        {middle}
+        <h2>Late</h2>
+        <p>Important late detail.</p>
+      </body>
+    </html>
+    """
+
+    extract = ingest.parse_html_extract(html)
+
+    headings = [heading["text"] for heading in extract["headings"]]
+    assert headings == ["Early", "Late"]
+    late = [section for section in extract["sections"] if section["heading"] == "Late"][0]
+    assert "Important late detail." in late["text"]
+
+
+def test_html_extract_is_added_to_source_packet(tmp_path: Path, monkeypatch, capsys) -> None:
+    vault = make_vault(tmp_path)
+    source = vault / "_raw" / "adj.html"
+    source.write_text("<html><head><title>Adjuster</title></head><body><h1>Claim</h1><p>Notes</p></body></html>", encoding="utf-8")
+    args = IngestArgs([str(source)])
+    args.print_prompt = True
+
+    monkeypatch.chdir(vault)
+    monkeypatch.setattr(ingest.shutil, "which", lambda name: "/usr/local/bin/qmd" if name == "qmd" else None)
+    monkeypatch.setattr(ingest.subprocess, "run", fake_qmd_run)
+
+    assert cli.cmd_dispatch(args) == 0
+    packet = json.loads(capsys.readouterr().out)
+    extract = packet["sources"][0]["html_extract"]
+    assert extract["title"] == "Adjuster"
+    assert extract["headings"] == [{"tag": "h1", "text": "Claim"}]
+    assert "Notes" in extract["sections"][0]["text"]
+    assert "html_preview" not in packet["sources"][0]
+
+
 def test_ingest_valid_plan_applies_pages_and_special_files(tmp_path: Path, monkeypatch) -> None:
     vault = make_vault(tmp_path)
     source = vault / "note.md"
