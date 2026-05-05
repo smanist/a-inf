@@ -149,6 +149,18 @@ def add_dispatch_options(parser: argparse.ArgumentParser) -> None:
         default="codex",
         help="Codex executable to invoke. Default: codex.",
     )
+    parser.add_argument(
+        "--sandbox",
+        choices=["read-only", "workspace-write", "danger-full-access"],
+        default="workspace-write",
+        help="Sandbox mode for Codex-dispatched workflows. Default: workspace-write.",
+    )
+    parser.add_argument(
+        "--add-dir",
+        action="append",
+        default=[],
+        help="Additional directory Codex may read/write. Repeat for multiple directories.",
+    )
 
 
 def cmd_init(args: argparse.Namespace) -> int:
@@ -220,7 +232,18 @@ def run_dispatch(dispatch: Dispatch, args: argparse.Namespace) -> int:
         print(dispatch.prompt)
         return 127
 
-    return subprocess.call([codex_bin, "exec", dispatch.prompt], cwd=find_vault_root(Path.cwd()))
+    vault = find_vault_root(Path.cwd())
+    command = [codex_bin, "exec", "--sandbox", args.sandbox, "--cd", str(vault)]
+    add_dirs = [*default_add_dirs(vault, dispatch.skill), *args.add_dir]
+    seen_dirs: set[Path] = set()
+    for directory in add_dirs:
+        resolved = Path(directory).expanduser().resolve()
+        if resolved in seen_dirs:
+            continue
+        seen_dirs.add(resolved)
+        command.extend(["--add-dir", str(resolved)])
+    command.append(dispatch.prompt)
+    return subprocess.call(command, cwd=vault)
 
 
 def build_dispatch(skill: str, workflow_args: list[str]) -> Dispatch:
@@ -240,6 +263,30 @@ def build_dispatch(skill: str, workflow_args: list[str]) -> Dispatch:
         "whenever the selected workflow writes to the vault."
     )
     return Dispatch(skill=skill, prompt=prompt)
+
+
+def default_add_dirs(vault: Path, skill: str) -> list[Path]:
+    if skill not in {"codex-history-ingest", "wiki-history-ingest", "wiki-status"}:
+        return []
+
+    history_path = os.environ.get("CODEX_HISTORY_PATH") or read_env_value(
+        vault / ".env", "CODEX_HISTORY_PATH"
+    )
+    path = Path(history_path).expanduser() if history_path else Path.home() / ".codex"
+    return [path] if path.exists() else []
+
+
+def read_env_value(path: Path, key: str) -> str | None:
+    if not path.exists():
+        return None
+    prefix = f"{key}="
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or not stripped.startswith(prefix):
+            continue
+        value = stripped[len(prefix) :].strip().strip('"').strip("'")
+        return value or None
+    return None
 
 
 def infer_ingest_skill(workflow_args: list[str], data: bool = False) -> str:

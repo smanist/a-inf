@@ -25,7 +25,7 @@ a-inf query "what do I know about rate limiting?"
 
 `a-inf init` is local and deterministic. It creates the vault folders, seed files, `.a-inf/config.toml`, a compatibility `.env`, Obsidian config, `.gitignore` entries for local config, and local skill symlinks under `.skills/`.
 
-The other commands generate a Codex prompt from the matching skill and invoke `codex exec` when Codex is available. Use `--print-prompt` to inspect the generated prompt instead:
+The other commands generate a Codex prompt from the matching skill and invoke `codex exec --sandbox workspace-write --cd <vault>` when Codex is available. Use `--print-prompt` to inspect the generated prompt instead:
 
 ```bash
 a-inf ingest paper-xx --print-prompt
@@ -94,8 +94,10 @@ a-inf ingest paper-xx
 maps to `wiki-ingest`, constructs a prompt with the vault path, selected skill file, and CLI arguments, then runs:
 
 ```bash
-codex exec "<generated prompt>"
+codex exec --sandbox workspace-write --cd <vault> "<generated prompt>"
 ```
+
+Use `--sandbox read-only` for dry inspection workflows, or `--add-dir <path>` when an ingest source lives outside the vault and Codex needs access to it. `a-inf status` and `a-inf history` automatically add `CODEX_HISTORY_PATH` or `~/.codex` when that directory exists.
 
 Commands that can be fully deterministic should move into Python over time. Commands that require synthesis can keep using Codex behind the CLI.
 
