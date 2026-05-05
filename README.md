@@ -20,6 +20,7 @@ From the repository you want to use as a vault:
 a-inf init
 a-inf ingest paper-xx
 a-inf status
+a-inf insights
 a-inf query "what do I know about rate limiting?"
 ```
 
@@ -68,7 +69,8 @@ If `AGENTS.md` already exists, `a-inf init` appends a small marked `a-inf` secti
 | `a-inf ingest <source...>` | Ingest documents or staged content |
 | `a-inf ingest <url>` | Route URL ingest to `ingest-url` |
 | `a-inf query <question>` | Answer from the compiled vault |
-| `a-inf status` | Show ingest state and deltas |
+| `a-inf status` | Show ingest state and deltas locally |
+| `a-inf insights` | Analyze hubs, bridges, and graph structure |
 | `a-inf update` | Sync current project knowledge into the vault |
 | `a-inf history` | Mine local Codex history from `~/.codex` |
 | `a-inf lint` | Audit links, metadata, stale pages, and orphans |
@@ -97,9 +99,9 @@ maps to `wiki-ingest`, constructs a prompt with the vault path, selected skill f
 codex exec --sandbox workspace-write --cd <vault> "<generated prompt>"
 ```
 
-Use `--sandbox read-only` for dry inspection workflows, or `--add-dir <path>` when an ingest source lives outside the vault and Codex needs access to it. `a-inf status` and `a-inf history` automatically add `CODEX_HISTORY_PATH` or `~/.codex` when that directory exists.
+Use `--sandbox read-only` for dry inspection workflows, or `--add-dir <path>` when an ingest source lives outside the vault and Codex needs access to it. `a-inf history` automatically adds `CODEX_HISTORY_PATH` or `~/.codex` when that directory exists.
 
-Commands that can be fully deterministic should move into Python over time. Commands that require synthesis can keep using Codex behind the CLI.
+Commands that can be fully deterministic should move into Python over time. `a-inf status` is now deterministic local Python; commands that require synthesis can keep using Codex behind the CLI.
 
 ## Configuration
 
@@ -139,12 +141,12 @@ The bundled skills remain the source of truth for language-model workflows:
 ├── wiki-dashboard/
 ├── wiki-export/
 ├── wiki-history-ingest/
+├── wiki-insights/
 ├── wiki-ingest/
 ├── wiki-lint/
 ├── wiki-query/
 ├── wiki-rebuild/
 ├── wiki-research/
-├── wiki-status/
 ├── wiki-synthesize/
 └── wiki-update/
 ```
@@ -155,6 +157,6 @@ The target architecture is CLI-first:
 
 - `init`, config, folder creation, and symlink management live in Python.
 - There is no setup skill; initialization is deterministic CLI execution.
-- Read-only status and deterministic maintenance should move into Python next.
+- Read-only status lives in Python.
 - High-level synthesis commands can continue to invoke Codex with the appropriate skill.
 - Skills become internal execution specs rather than the user-facing interface.

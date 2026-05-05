@@ -50,8 +50,8 @@ Prefer CLI commands for user-facing workflows. Skills live in `.skills/<name>/SK
 | "add this URL" / "ingest this link" | `a-inf ingest <url>` | `ingest-url` |
 | "ingest" / "process these docs" | `a-inf ingest <source>` | `wiki-ingest` |
 | "process this export" / logs, transcripts | `a-inf ingest --data <source>` | `data-ingest` |
-| "what's the status" / "show the delta" | `a-inf status` | `wiki-status` |
-| "wiki insights" / "hubs" / "wiki structure" | `a-inf status` | `wiki-status` |
+| "what's the status" / "show the delta" | `a-inf status` | deterministic CLI |
+| "wiki insights" / "hubs" / "wiki structure" | `a-inf insights` | `wiki-insights` |
 | "what do I know about X" / any question | `a-inf query "X"` | `wiki-query` |
 | "audit" / "lint" / "find broken links" | `a-inf lint` | `wiki-lint` |
 | "rebuild" / "archive" / "restore" | `a-inf rebuild` | `wiki-rebuild` |

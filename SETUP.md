@@ -66,6 +66,7 @@ a-inf ingest paper-xx
 a-inf ingest https://example.com/article
 a-inf query "what do I know about X?"
 a-inf status
+a-inf insights
 a-inf update
 a-inf history
 ```
@@ -82,7 +83,7 @@ If the source is outside the initialized vault, grant Codex access to that direc
 a-inf ingest /path/to/source.md --add-dir /path/to
 ```
 
-`a-inf status` and `a-inf history` automatically grant Codex access to `CODEX_HISTORY_PATH` or `~/.codex` when that directory exists.
+`a-inf status` runs locally. `a-inf history` automatically grants Codex access to `CODEX_HISTORY_PATH` or `~/.codex` when that directory exists.
 
 ## Command Mapping
 
@@ -92,7 +93,8 @@ a-inf ingest /path/to/source.md --add-dir /path/to
 | `a-inf ingest <url>` | `ingest-url` |
 | `a-inf ingest --data <source>` | `data-ingest` |
 | `a-inf query` | `wiki-query` |
-| `a-inf status` | `wiki-status` |
+| `a-inf status` | deterministic CLI |
+| `a-inf insights` | `wiki-insights` |
 | `a-inf update` | `wiki-update` |
 | `a-inf history` | `codex-history-ingest` |
 | `a-inf lint` | `wiki-lint` |
