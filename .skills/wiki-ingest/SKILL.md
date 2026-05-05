@@ -56,15 +56,13 @@ For images and scanned PDFs, most conceptual meaning is inferred. Mark those cla
 
 ## QMD Discovery
 
-If `qmd_wiki_collection` or `qmd_papers_collection` is non-empty, query QMD before finalizing the plan. Use `qmd query -c <collection>` when shell access is available, or the QMD MCP tools when provided.
+If `qmd_wiki_collection` or `qmd_papers_collection` is non-empty, do a bounded QMD lookup before finalizing the plan. These values are QMD collection names, not filesystem paths. During ingest, use `qmd search --json -n 5 -c <collection-name> "<terms>"` only. Do not use `qmd query`, `qmd vsearch`, reranking, embedding, or any QMD command that may invoke local models. Do not pass `vault` or a source directory path as `-c`. If the shell environment does not already inherit the packet's QMD paths, prefix shell commands with `INDEX_PATH`, `XDG_CACHE_HOME`, and `XDG_CONFIG_HOME` from the `qmd` packet object.
 
-- Query the wiki collection for existing related pages, recurring themes, and link targets.
-- Query the papers collection for related source material, contradictions, and source-backed terminology.
-- Use a semantic query for the source topic or thesis.
-- Use a lexical query for key terms, author names, methods, libraries, or organizations.
+- Search the wiki collection for existing related pages, recurring themes, and link targets.
+- Search the papers collection for related source material, contradictions, and source-backed terminology.
+- Use only concise lexical terms: topic nouns, author names, methods, libraries, organizations, and exact phrases.
 
-Use results only to improve page linking, identify recurring themes, or mark contradictions. If QMD fails despite
-being configured, continue without it and include the failure in `warnings`.
+Use results only to improve page linking, identify recurring themes, or mark contradictions. If QMD does not return quickly, continue without it and include the timeout/failure in `warnings`. Do not start background QMD processes, do not try to stop QMD through stdin, and do not wait on repeated slow lookups.
 
 ## Planning Rules
 

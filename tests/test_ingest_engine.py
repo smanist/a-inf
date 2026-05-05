@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 from a_inf import cli, ingest
+from a_inf import qmd as qmd_module
 
 
 class IngestArgs:
@@ -25,8 +26,18 @@ class IngestArgs:
 
 
 def fake_qmd_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-    assert command[-1] == "--version"
-    return subprocess.CompletedProcess(command, 0, stdout="qmd 2.1.0\n", stderr="")
+    if command[-1] == "--version":
+        return subprocess.CompletedProcess(command, 0, stdout="qmd 2.1.0\n", stderr="")
+    if command[1:] == ["collection", "show", "vault"]:
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+    if command[1:] in (["update"], ["embed"]):
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+    raise AssertionError(f"unexpected qmd command: {command}")
+
+
+def isolate_qmd_home(tmp_path: Path, monkeypatch) -> None:
+    home = tmp_path / "qmd-home"
+    monkeypatch.setattr(qmd_module.Path, "home", classmethod(lambda cls: home))
 
 
 def make_vault(tmp_path: Path) -> Path:
@@ -90,6 +101,7 @@ def page_plan(source: Path, *, action: str = "create", path: str = "concepts/det
 
 
 def test_ingest_print_prompt_emits_packet_without_writes(tmp_path: Path, monkeypatch, capsys) -> None:
+    isolate_qmd_home(tmp_path, monkeypatch)
     vault = make_vault(tmp_path)
     (vault / ".env").write_text("QMD_WIKI_COLLECTION=vault\nQMD_PAPERS_COLLECTION=vault\n", encoding="utf-8")
     source = vault / "note.md"
@@ -98,8 +110,8 @@ def test_ingest_print_prompt_emits_packet_without_writes(tmp_path: Path, monkeyp
     args.print_prompt = True
 
     monkeypatch.chdir(vault)
-    monkeypatch.setattr(ingest.shutil, "which", lambda name: "/usr/local/bin/qmd" if name == "qmd" else None)
-    monkeypatch.setattr(ingest.subprocess, "run", fake_qmd_run)
+    monkeypatch.setattr(qmd_module.shutil, "which", lambda name: "/usr/local/bin/qmd" if name == "qmd" else None)
+    monkeypatch.setattr(qmd_module.subprocess, "run", fake_qmd_run)
     monkeypatch.setattr(subprocess, "call", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("codex called")))
 
     assert cli.cmd_dispatch(args) == 0
@@ -110,11 +122,18 @@ def test_ingest_print_prompt_emits_packet_without_writes(tmp_path: Path, monkeyp
         "version": "qmd 2.1.0",
         "wiki_collection": "vault",
         "papers_collection": "vault",
+        "index_path": str(vault / ".a-inf" / "qmd" / "index.sqlite"),
+        "INDEX_PATH": str(vault / ".a-inf" / "qmd" / "index.sqlite"),
+        "XDG_CACHE_HOME": str(vault / ".a-inf" / "qmd" / "cache"),
+        "XDG_CONFIG_HOME": str(vault / ".a-inf" / "qmd" / "config"),
+        "lookup_policy": "Use qmd search --json -n 5 only. Do not use qmd query, vsearch, reranking, or model-backed QMD commands during ingest.",
     }
     assert packet["qmd_wiki_collection"] == "vault"
     assert packet["qmd_papers_collection"] == "vault"
     assert packet["sources"][0]["content_hash"] == ingest.hash_file(source)
     assert "codex_prompt" in packet
+    assert "do not run `qmd query`" in packet["codex_prompt"]
+    assert "qmd search --json -n 5" in packet["codex_prompt"]
     assert not (vault / ".a-inf" / "runs").exists()
 
 
@@ -174,6 +193,7 @@ def test_html_extract_captures_later_sections() -> None:
 
 
 def test_html_extract_is_added_to_source_packet(tmp_path: Path, monkeypatch, capsys) -> None:
+    isolate_qmd_home(tmp_path, monkeypatch)
     vault = make_vault(tmp_path)
     source = vault / "_raw" / "adj.html"
     source.write_text("<html><head><title>Adjuster</title></head><body><h1>Claim</h1><p>Notes</p></body></html>", encoding="utf-8")
@@ -181,8 +201,8 @@ def test_html_extract_is_added_to_source_packet(tmp_path: Path, monkeypatch, cap
     args.print_prompt = True
 
     monkeypatch.chdir(vault)
-    monkeypatch.setattr(ingest.shutil, "which", lambda name: "/usr/local/bin/qmd" if name == "qmd" else None)
-    monkeypatch.setattr(ingest.subprocess, "run", fake_qmd_run)
+    monkeypatch.setattr(qmd_module.shutil, "which", lambda name: "/usr/local/bin/qmd" if name == "qmd" else None)
+    monkeypatch.setattr(qmd_module.subprocess, "run", fake_qmd_run)
 
     assert cli.cmd_dispatch(args) == 0
     packet = json.loads(capsys.readouterr().out)
@@ -194,12 +214,13 @@ def test_html_extract_is_added_to_source_packet(tmp_path: Path, monkeypatch, cap
 
 
 def test_ingest_valid_plan_applies_pages_and_special_files(tmp_path: Path, monkeypatch) -> None:
+    isolate_qmd_home(tmp_path, monkeypatch)
     vault = make_vault(tmp_path)
     source = vault / "note.md"
     source.write_text("hybrid ingest\n", encoding="utf-8")
     args = IngestArgs([str(source)])
 
-    def fake_call(command: list[str], cwd: Path) -> int:
+    def fake_call(command: list[str], cwd: Path, env: dict[str, str] | None = None) -> int:
         assert command[0] == "/usr/local/bin/codex"
         match = re.search(r"Write exactly one JSON file at this path: (.+)", command[-1])
         assert match
@@ -210,7 +231,8 @@ def test_ingest_valid_plan_applies_pages_and_special_files(tmp_path: Path, monke
 
     monkeypatch.chdir(vault)
     monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}")
-    monkeypatch.setattr(ingest.subprocess, "run", fake_qmd_run)
+    monkeypatch.setattr(qmd_module.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(qmd_module.subprocess, "run", fake_qmd_run)
     monkeypatch.setattr(ingest.subprocess, "call", fake_call)
 
     assert cli.cmd_dispatch(args) == 0
@@ -227,13 +249,14 @@ def test_ingest_valid_plan_applies_pages_and_special_files(tmp_path: Path, monke
 
 
 def test_ingest_missing_qmd_fails_before_codex(tmp_path: Path, monkeypatch, capsys) -> None:
+    isolate_qmd_home(tmp_path, monkeypatch)
     vault = make_vault(tmp_path)
     source = vault / "note.md"
     source.write_text("hybrid ingest\n", encoding="utf-8")
     args = IngestArgs([str(source)])
 
     monkeypatch.chdir(vault)
-    monkeypatch.setattr(ingest.shutil, "which", lambda name: None if name == "qmd" else "/usr/local/bin/codex")
+    monkeypatch.setattr(qmd_module.shutil, "which", lambda name: None if name == "qmd" else "/usr/local/bin/codex")
     monkeypatch.setattr(ingest.subprocess, "call", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("codex called")))
 
     assert cli.cmd_dispatch(args) == 127
@@ -241,6 +264,7 @@ def test_ingest_missing_qmd_fails_before_codex(tmp_path: Path, monkeypatch, caps
 
 
 def test_ingest_checks_qmd_version_before_codex(tmp_path: Path, monkeypatch) -> None:
+    isolate_qmd_home(tmp_path, monkeypatch)
     vault = make_vault(tmp_path)
     source = vault / "note.md"
     source.write_text("hybrid ingest\n", encoding="utf-8")
@@ -248,10 +272,10 @@ def test_ingest_checks_qmd_version_before_codex(tmp_path: Path, monkeypatch) -> 
     calls: list[str] = []
 
     def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        calls.append("qmd")
+        calls.append(" ".join(command[1:]))
         return subprocess.CompletedProcess(command, 0, stdout="qmd 2.1.0\n", stderr="")
 
-    def fake_call(command: list[str], cwd: Path) -> int:
+    def fake_call(command: list[str], cwd: Path, env: dict[str, str] | None = None) -> int:
         calls.append("codex")
         match = re.search(r"Write exactly one JSON file at this path: (.+)", command[-1])
         assert match
@@ -262,21 +286,23 @@ def test_ingest_checks_qmd_version_before_codex(tmp_path: Path, monkeypatch) -> 
 
     monkeypatch.chdir(vault)
     monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}")
-    monkeypatch.setattr(ingest.subprocess, "run", fake_run)
+    monkeypatch.setattr(qmd_module.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(qmd_module.subprocess, "run", fake_run)
     monkeypatch.setattr(ingest.subprocess, "call", fake_call)
 
     assert cli.cmd_dispatch(args) == 0
-    assert calls == ["qmd", "codex"]
+    assert calls == ["--version", "--version", "collection show vault", "--version", "update", "embed", "codex", "--version", "update", "embed"]
 
 
 def test_ingest_invalid_plan_fails_without_wiki_writes(tmp_path: Path, monkeypatch) -> None:
+    isolate_qmd_home(tmp_path, monkeypatch)
     vault = make_vault(tmp_path)
     source = vault / "note.md"
     source.write_text("hybrid ingest\n", encoding="utf-8")
     original_manifest = (vault / ".manifest.json").read_text(encoding="utf-8")
     args = IngestArgs([str(source)])
 
-    def fake_call(command: list[str], cwd: Path) -> int:
+    def fake_call(command: list[str], cwd: Path, env: dict[str, str] | None = None) -> int:
         match = re.search(r"Write exactly one JSON file at this path: (.+)", command[-1])
         assert match
         plan_path = Path(match.group(1).strip())
@@ -286,7 +312,8 @@ def test_ingest_invalid_plan_fails_without_wiki_writes(tmp_path: Path, monkeypat
 
     monkeypatch.chdir(vault)
     monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}")
-    monkeypatch.setattr(ingest.subprocess, "run", fake_qmd_run)
+    monkeypatch.setattr(qmd_module.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(qmd_module.subprocess, "run", fake_qmd_run)
     monkeypatch.setattr(ingest.subprocess, "call", fake_call)
 
     assert cli.cmd_dispatch(args) == 1
@@ -295,6 +322,7 @@ def test_ingest_invalid_plan_fails_without_wiki_writes(tmp_path: Path, monkeypat
 
 
 def test_append_mode_skips_unchanged_sources_in_packet(tmp_path: Path, monkeypatch, capsys) -> None:
+    isolate_qmd_home(tmp_path, monkeypatch)
     vault = make_vault(tmp_path)
     source = vault / "note.md"
     source.write_text("hybrid ingest\n", encoding="utf-8")
@@ -319,6 +347,8 @@ def test_append_mode_skips_unchanged_sources_in_packet(tmp_path: Path, monkeypat
     args.print_prompt = True
 
     monkeypatch.chdir(vault)
+    monkeypatch.setattr(qmd_module.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(qmd_module.subprocess, "run", fake_qmd_run)
 
     assert cli.cmd_dispatch(args) == 0
     packet = json.loads(capsys.readouterr().out)

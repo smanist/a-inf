@@ -4,6 +4,13 @@ import subprocess
 from pathlib import Path
 
 from a_inf import cli
+from a_inf import qmd
+
+
+def isolate_qmd_home(tmp_path: Path, monkeypatch) -> Path:
+    home = tmp_path / "qmd-home"
+    monkeypatch.setattr(qmd.Path, "home", classmethod(lambda cls: home))
+    return home
 
 
 class Args:
@@ -20,13 +27,18 @@ def test_dispatch_invokes_codex_with_workspace_write_and_cd(
     vault = tmp_path / "vault"
     vault.mkdir()
     (vault / ".manifest.json").write_text('{"version": 1}\n', encoding="utf-8")
-    calls: list[tuple[list[str], Path]] = []
+    isolate_qmd_home(tmp_path, monkeypatch)
+    calls: list[tuple[list[str], Path, dict[str, str] | None]] = []
 
     monkeypatch.chdir(vault)
     monkeypatch.setattr(cli.shutil, "which", lambda _: "/usr/local/bin/codex")
+    sync_calls: list[Path] = []
+    monkeypatch.setattr(cli, "sync_qmd", lambda vault_arg, _config: sync_calls.append(vault_arg) or True)
+    ensure_calls: list[Path] = []
+    monkeypatch.setattr(cli, "ensure_qmd_collection", lambda vault_arg, _config: ensure_calls.append(vault_arg) or True)
 
-    def fake_call(command: list[str], cwd: Path) -> int:
-        calls.append((command, cwd))
+    def fake_call(command: list[str], cwd: Path, env: dict[str, str] | None = None) -> int:
+        calls.append((command, cwd, env))
         return 0
 
     monkeypatch.setattr(subprocess, "call", fake_call)
@@ -34,20 +46,23 @@ def test_dispatch_invokes_codex_with_workspace_write_and_cd(
     result = cli.run_dispatch(cli.Dispatch("wiki-ingest", "prompt"), Args())
 
     assert result == 0
-    assert calls == [
-        (
-            [
-                "/usr/local/bin/codex",
-                "exec",
-                "--sandbox",
-                "workspace-write",
-                "--cd",
-                str(vault),
-                "prompt",
-            ],
-            vault,
-        )
+    assert calls[0][0] == [
+        "/usr/local/bin/codex",
+        "exec",
+        "--sandbox",
+        "workspace-write",
+        "--cd",
+        str(vault),
+        "--add-dir",
+        str(vault / ".a-inf" / "qmd"),
+        "prompt",
     ]
+    assert calls[0][1] == vault
+    assert calls[0][2]["XDG_CACHE_HOME"] == str(vault / ".a-inf" / "qmd" / "cache")
+    assert calls[0][2]["XDG_CONFIG_HOME"] == str(vault / ".a-inf" / "qmd" / "config")
+    assert calls[0][2]["INDEX_PATH"] == str(vault / ".a-inf" / "qmd" / "index.sqlite")
+    assert ensure_calls == [vault]
+    assert sync_calls == [vault]
 
 
 def test_history_dispatch_adds_codex_history_dir(
@@ -63,8 +78,10 @@ def test_history_dispatch_adds_codex_history_dir(
 
     monkeypatch.chdir(vault)
     monkeypatch.setattr(cli.shutil, "which", lambda _: "/usr/local/bin/codex")
+    monkeypatch.setattr(cli, "sync_qmd", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(cli, "ensure_qmd_collection", lambda *_args, **_kwargs: True)
 
-    def fake_call(command: list[str], cwd: Path) -> int:
+    def fake_call(command: list[str], cwd: Path, env: dict[str, str] | None = None) -> int:
         calls.append((command, cwd))
         return 0
 
@@ -132,8 +149,11 @@ def test_status_insights_routes_to_wiki_insights(
 
     monkeypatch.chdir(vault)
     monkeypatch.setattr(cli.shutil, "which", lambda _: "/usr/local/bin/codex")
+    sync_calls: list[Path] = []
+    monkeypatch.setattr(cli, "sync_qmd", lambda vault_arg, _config: sync_calls.append(vault_arg) or True)
+    monkeypatch.setattr(cli, "ensure_qmd_collection", lambda *_args, **_kwargs: True)
 
-    def fake_call(command: list[str], cwd: Path) -> int:
+    def fake_call(command: list[str], cwd: Path, env: dict[str, str] | None = None) -> int:
         calls.append((command, cwd))
         return 0
 
@@ -143,3 +163,30 @@ def test_status_insights_routes_to_wiki_insights(
 
     assert result == 0
     assert "Use the `wiki-insights` skill" in calls[0][0][-1]
+    assert sync_calls == []
+
+
+def test_read_only_write_dispatch_skips_qmd_sync(tmp_path: Path, monkeypatch) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / ".manifest.json").write_text('{"version": 1}\n', encoding="utf-8")
+    calls: list[tuple[list[str], Path]] = []
+
+    class ReadOnlyArgs(Args):
+        sandbox = "read-only"
+
+    monkeypatch.chdir(vault)
+    monkeypatch.setattr(cli.shutil, "which", lambda _: "/usr/local/bin/codex")
+    monkeypatch.setattr(cli, "sync_qmd", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("qmd sync called")))
+    monkeypatch.setattr(cli, "ensure_qmd_collection", lambda *_args, **_kwargs: True)
+
+    def fake_call(command: list[str], cwd: Path, env: dict[str, str] | None = None) -> int:
+        calls.append((command, cwd))
+        return 0
+
+    monkeypatch.setattr(subprocess, "call", fake_call)
+
+    result = cli.run_dispatch(cli.Dispatch("wiki-update", "prompt"), ReadOnlyArgs())
+
+    assert result == 0
+    assert calls[0][0][2:4] == ["--sandbox", "read-only"]

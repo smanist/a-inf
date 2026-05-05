@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Any
 import tomllib
 
+from a_inf.qmd import QmdInfo, ensure_qmd_collection, qmd_env, qmd_state_dirs, require_qmd, resolve_qmd, sync_qmd
+
 
 WIKI_PAGE_DIRS = ["concepts", "entities", "skills", "references", "synthesis", "journal", "projects"]
 HTML_SUFFIXES = {".htm", ".html"}
@@ -97,14 +99,6 @@ class IngestRun:
 
 
 @dataclass(frozen=True)
-class QmdInfo:
-    binary: str
-    version: str
-    wiki_collection: str
-    papers_collection: str
-
-
-@dataclass(frozen=True)
 class ValidatedPlan:
     raw: dict[str, Any]
     pages: list[dict[str, Any]]
@@ -123,7 +117,7 @@ def run_hybrid_ingest(args: Any, vault: Path) -> int:
         config = load_wiki_config(vault)
         manifest, _ = read_manifest(vault)
         sources = select_sources(vault, config, manifest, list(getattr(args, "args", [])), mode)
-        qmd = resolve_qmd(config)
+        qmd = resolve_qmd(config, vault)
         run = make_run(vault)
         prompt = build_codex_prompt(vault, config, manifest, sources, run, mode, qmd)
 
@@ -132,6 +126,8 @@ def run_hybrid_ingest(args: Any, vault: Path) -> int:
             return 0
 
         if not require_qmd(qmd):
+            return 127
+        if not ensure_qmd_collection(vault, config):
             return 127
 
         run.run_dir.mkdir(parents=True, exist_ok=True)
@@ -159,13 +155,15 @@ def run_hybrid_ingest(args: Any, vault: Path) -> int:
             command.extend(["--add-dir", str(directory)])
         command.append(prompt)
 
-        result = subprocess.call(command, cwd=vault)
+        result = subprocess.call(command, cwd=vault, env=qmd_env(os.environ, vault))
         if result != 0:
             return result
 
         plan = read_plan(run.plan_path)
         validated = validate_plan(plan, vault, config, manifest, sources, mode)
         warnings = apply_plan(validated, vault, config, manifest, sources, mode)
+        if not sync_qmd(vault, config):
+            warnings.append("QMD sync failed after ingest; wiki files were still applied.")
         prune_runs(vault)
         for warning in warnings:
             print(f"warning: {warning}", file=sys.stderr)
@@ -180,41 +178,6 @@ def run_hybrid_ingest(args: Any, vault: Path) -> int:
     finally:
         if run is not None and run.run_dir.exists():
             prune_runs(vault)
-
-
-def resolve_qmd(config: dict[str, str]) -> QmdInfo | None:
-    qmd_bin = shutil.which("qmd")
-    if qmd_bin is None:
-        return None
-    try:
-        result = subprocess.run(
-            [qmd_bin, "--version"],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-    except OSError:
-        return None
-    if result.returncode != 0:
-        return None
-    output = (result.stdout or result.stderr).strip()
-    version = output.splitlines()[0] if output else ""
-    return QmdInfo(
-        binary=qmd_bin,
-        version=version,
-        wiki_collection=config.get("QMD_WIKI_COLLECTION") or "",
-        papers_collection=config.get("QMD_PAPERS_COLLECTION") or "",
-    )
-
-
-def require_qmd(qmd: QmdInfo | None) -> bool:
-    if qmd is not None:
-        return True
-    print(
-        "qmd executable not found or not usable. Install it with `npm install -g @tobilu/qmd`.",
-        file=sys.stderr,
-    )
-    return False
 
 
 def resolve_mode(args: Any) -> str:
@@ -507,6 +470,12 @@ def build_codex_prompt(
         "For HTML sources, use the packet's `html_extract` field as the default extraction; do not write ad hoc HTML parser scripts unless the extract is unreadable and targeted raw inspection is necessary.\n"
         f"Write exactly one JSON file at this path: {run.plan_path}\n"
         "Do not write any other files. The deterministic CLI will validate and apply the plan.\n\n"
+        "When querying QMD, use qmd_wiki_collection or qmd_papers_collection as collection names, not paths. "
+        "Do not pass the vault path to `-c`. During ingest, do not run `qmd query`, `qmd vsearch`, reranking, "
+        "or model-backed QMD commands. Use at most one bounded lexical command per collection: "
+        "`qmd search --json -n 5 -c <collection-name> \"<terms>\"`. If it is slow or empty, record a warning "
+        "and continue; do not start background QMD jobs or try to stop them through stdin. If needed, prefix QMD "
+        "shell commands with the INDEX_PATH, XDG_CACHE_HOME, and XDG_CONFIG_HOME values from the qmd packet object.\n\n"
         "Return JSON matching this contract:\n"
         f"{json.dumps(schema, indent=2)}\n\n"
         "Selected ingest packet:\n"
@@ -752,11 +721,17 @@ def truncate_text(value: str, max_chars: int) -> str:
 def qmd_to_json(qmd: QmdInfo | None) -> dict[str, str] | None:
     if qmd is None:
         return None
+    env = qmd_env({}, Path(qmd.vault_path)) if qmd.vault_path else {}
     return {
         "binary": qmd.binary,
         "version": qmd.version,
         "wiki_collection": qmd.wiki_collection,
         "papers_collection": qmd.papers_collection,
+        "index_path": qmd.index_path or "",
+        "INDEX_PATH": env.get("INDEX_PATH", ""),
+        "XDG_CACHE_HOME": env.get("XDG_CACHE_HOME", ""),
+        "XDG_CONFIG_HOME": env.get("XDG_CONFIG_HOME", ""),
+        "lookup_policy": "Use qmd search --json -n 5 only. Do not use qmd query, vsearch, reranking, or model-backed QMD commands during ingest.",
     }
 
 
@@ -848,14 +823,11 @@ def codex_add_dirs(
         except ValueError:
             parent = source.path.parent.resolve()
             add_dir(parent)
-    qmd_cache = qmd_cache_dir()
-    if qmd is not None and qmd_cache.exists():
-        add_dir(qmd_cache)
+    if qmd is not None:
+        for directory in qmd_state_dirs(vault):
+            if directory.exists():
+                add_dir(directory)
     return dirs
-
-
-def qmd_cache_dir() -> Path:
-    return Path.home() / ".cache" / "qmd"
 
 
 def read_plan(path: Path) -> dict[str, Any]:

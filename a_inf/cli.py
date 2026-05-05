@@ -14,6 +14,8 @@ from pathlib import Path
 import tomllib
 from urllib.parse import urlparse
 
+from a_inf.qmd import ensure_qmd_collection, ensure_qmd_state_dirs, qmd_env, qmd_state_dirs, sync_qmd
+
 
 VAULT_DIRS = [
     "concepts",
@@ -48,6 +50,23 @@ SKILL_ALIASES = {
     "colorize": "graph-colorize",
     "cross-link": "cross-linker",
     "tags": "tag-taxonomy",
+}
+
+QMD_SYNC_SKILLS = {
+    "wiki-ingest",
+    "ingest-url",
+    "data-ingest",
+    "wiki-update",
+    "codex-history-ingest",
+    "wiki-history-ingest",
+    "wiki-rebuild",
+    "wiki-research",
+    "wiki-capture",
+    "wiki-synthesize",
+    "wiki-dashboard",
+    "graph-colorize",
+    "cross-linker",
+    "tag-taxonomy",
 }
 
 
@@ -232,6 +251,16 @@ def cmd_init(args: argparse.Namespace) -> int:
     if args.write_global_config:
         write_global_config(vault)
 
+    config = load_wiki_config(vault)
+    for key in ["QMD_WIKI_COLLECTION", "QMD_PAPERS_COLLECTION"]:
+        local_value = read_env_value(vault / ".env", key)
+        if local_value:
+            config[key] = local_value
+        else:
+            config.setdefault(key, vault.name)
+    if not ensure_qmd_collection(vault, config):
+        return 127
+
     print(f"Initialized a-inf vault: {vault}")
     print(f"Skills source: {skills_source}")
     print(f"Skills installed locally: {linked}")
@@ -286,6 +315,9 @@ def run_dispatch(dispatch: Dispatch, args: argparse.Namespace) -> int:
     vault = find_vault_root(Path.cwd())
     command = [codex_bin, "exec", "--sandbox", args.sandbox, "--cd", str(vault)]
     add_dirs = [*default_add_dirs(vault, dispatch.skill), *args.add_dir]
+    if dispatch.skill in QMD_SYNC_SKILLS:
+        ensure_qmd_state_dirs(vault)
+        add_dirs.extend(directory for directory in qmd_state_dirs(vault) if directory.exists())
     seen_dirs: set[Path] = set()
     for directory in add_dirs:
         resolved = Path(directory).expanduser().resolve()
@@ -294,7 +326,14 @@ def run_dispatch(dispatch: Dispatch, args: argparse.Namespace) -> int:
         seen_dirs.add(resolved)
         command.extend(["--add-dir", str(resolved)])
     command.append(dispatch.prompt)
-    return subprocess.call(command, cwd=vault)
+    if dispatch.skill in QMD_SYNC_SKILLS and not ensure_qmd_collection(vault, load_wiki_config(vault)):
+        return 127
+    result = subprocess.call(command, cwd=vault, env=qmd_env(os.environ, vault))
+    if result == 0 and dispatch.skill in QMD_SYNC_SKILLS and args.sandbox != "read-only":
+        config = load_wiki_config(vault)
+        if not sync_qmd(vault, config):
+            print("warning: QMD sync failed after workflow; vault files may still have been updated.", file=sys.stderr)
+    return result
 
 
 def build_dispatch(skill: str, workflow_args: list[str]) -> Dispatch:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from a_inf import cli
 from a_inf.cli import cmd_init
 
 
@@ -16,10 +17,17 @@ class Args:
         self.write_global_config = False
 
 
-def test_init_creates_vault_structure_and_local_skill_links(tmp_path: Path) -> None:
+def test_init_creates_vault_structure_and_local_skill_links(tmp_path: Path, monkeypatch) -> None:
     vault = tmp_path / "vault"
     skills_source = Path(__file__).resolve().parents[1] / ".skills"
 
+    def fake_ensure_qmd_collection(qmd_vault: Path, config: dict[str, str]) -> bool:
+        assert qmd_vault == vault
+        assert config["QMD_WIKI_COLLECTION"] == vault.name
+        assert config["QMD_PAPERS_COLLECTION"] == vault.name
+        return True
+
+    monkeypatch.setattr(cli, "ensure_qmd_collection", fake_ensure_qmd_collection)
     result = cmd_init(Args(vault, skills_source))
 
     assert result == 0
@@ -66,10 +74,11 @@ def test_init_creates_vault_structure_and_local_skill_links(tmp_path: Path) -> N
     assert not (vault / ".skills" / "wiki-setup").exists()
 
 
-def test_init_is_idempotent(tmp_path: Path) -> None:
+def test_init_is_idempotent(tmp_path: Path, monkeypatch) -> None:
     vault = tmp_path / "vault"
     skills_source = Path(__file__).resolve().parents[1] / ".skills"
     args = Args(vault, skills_source)
+    monkeypatch.setattr(cli, "ensure_qmd_collection", lambda *_args, **_kwargs: True)
 
     assert cmd_init(args) == 0
     assert cmd_init(args) == 0
@@ -80,7 +89,7 @@ def test_init_is_idempotent(tmp_path: Path) -> None:
     assert gitignore.count("# a-inf local configuration") == 1
 
 
-def test_init_upgrades_existing_gitignore_section(tmp_path: Path) -> None:
+def test_init_upgrades_existing_gitignore_section(tmp_path: Path, monkeypatch) -> None:
     vault = tmp_path / "vault"
     vault.mkdir()
     (vault / ".gitignore").write_text(
@@ -88,6 +97,7 @@ def test_init_upgrades_existing_gitignore_section(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     skills_source = Path(__file__).resolve().parents[1] / ".skills"
+    monkeypatch.setattr(cli, "ensure_qmd_collection", lambda *_args, **_kwargs: True)
 
     assert cmd_init(Args(vault, skills_source)) == 0
 
