@@ -432,6 +432,9 @@ TEXT_SUFFIXES = {
     ".yml",
     ".zsh",
 }
+IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+PDF_SUFFIXES = {".pdf"}
+SUPPORTED_SOURCE_SUFFIXES = TEXT_SUFFIXES | IMAGE_SUFFIXES | PDF_SUFFIXES
 
 
 def build_status_report(vault: Path) -> str:
@@ -583,8 +586,8 @@ def scan_sources(vault: Path, config: dict[str, str], manifest: dict[str, object
         if not directory.exists() or not directory.is_dir():
             continue
         for path in directory.rglob("*"):
-            if path.is_file() and is_text_source(path):
-                add_source_file(sources, path, "document")
+            if path.is_file() and is_supported_status_source(path):
+                add_source_file(sources, path, source_type_for_path(path))
 
     history_path = configured_history_path(config)
     if history_path and history_path.exists():
@@ -629,8 +632,17 @@ def configured_history_path(config: dict[str, str]) -> Path | None:
     return None
 
 
-def is_text_source(path: Path) -> bool:
-    return path.suffix.lower() in TEXT_SUFFIXES
+def is_supported_status_source(path: Path) -> bool:
+    return path.suffix.lower() in SUPPORTED_SOURCE_SUFFIXES
+
+
+def source_type_for_path(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix in IMAGE_SUFFIXES:
+        return "image"
+    if suffix in PDF_SUFFIXES:
+        return "pdf"
+    return "document"
 
 
 def add_source_file(sources: dict[str, SourceFile], path: Path, source_type: str) -> None:

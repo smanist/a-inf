@@ -40,6 +40,7 @@ The deterministic engine supplies the run packet in the prompt:
 - `qmd`: required QMD CLI metadata supplied by the deterministic engine.
 - `qmd_wiki_collection` and `qmd_papers_collection`: collection names for related-source discovery.
 - HTML sources may include an `html_extract` with extracted title, h1/h2/h3 headings, section-level visible-text snippets, a bounded whole-document text sample, and truncation metadata.
+- PDF sources may include `pdf_extract` from MinerU with bounded markdown, output paths, extraction metadata, warnings, and a small `content_list_sample`.
 
 Python has already selected the sources. Do not re-run append/full/raw filtering and do not skip selected
 sources unless you cannot read them; if a source cannot be interpreted, include it in `sources`, leave both
@@ -48,7 +49,7 @@ page lists empty, and explain the issue in `warnings`.
 ## Source Reading
 
 - Markdown, HTML, text, code-like text, CSV/TSV, JSON, YAML, and logs: read directly and extract durable concepts, entities, claims, relationships, procedures, and open questions. For HTML, use any `html_extract` in the packet as the default extraction path. Do not write one-off HTML parser scripts unless the extract is unreadable and targeted raw inspection is necessary.
-- PDFs: read the relevant pages. If a PDF is scanned or slide-like, treat page images like image sources.
+- PDFs: prefer `pdf_extract.markdown` when present. If the extract is unavailable, failed, disabled, or visibly incomplete, read the relevant pages directly; if a PDF is scanned or slide-like, treat page images like image sources.
 - Images: transcribe visible text exactly where possible; describe diagrams, screens, arrows, nodes, and ambiguous handwriting. Interpretation beyond visible text is inferred.
 - Raw drafts: promote only the durable knowledge. A raw file may map to one or more normal wiki pages.
 

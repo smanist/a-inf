@@ -12,7 +12,7 @@ npm install -g @tobilu/qmd
 npm install -g defuddle
 ```
 
-This exposes the `a-inf` command from the current checkout. `qmd` is a required runtime CLI dependency for `a-inf ingest`; `defuddle` is required for URL ingest via `a-inf ingest <url>`. `a-inf` keeps QMD's writable SQLite/sqlite-vec index and collection config under `.a-inf/qmd/`.
+This exposes the `a-inf` command from the current checkout. `qmd` is a required runtime CLI dependency for `a-inf ingest`; `defuddle` is required for URL ingest via `a-inf ingest <url>`. `mineru` is optional for PDF extraction. `a-inf` keeps QMD's writable SQLite/sqlite-vec index and collection config under `.a-inf/qmd/`.
 
 ## Quick Start
 
@@ -28,7 +28,7 @@ a-inf query "what do I know about rate limiting?"
 
 `a-inf init` is local and deterministic. It creates the vault folders, seed files, `.a-inf/config.toml`, a compatibility `.env`, Obsidian config, `.gitignore` entries for local config, and local skill symlinks under `.skills/`. New `.env` files default `QMD_WIKI_COLLECTION` and `QMD_PAPERS_COLLECTION` to the repo directory name, and init creates the matching QMD collection.
 
-`a-inf ingest` now runs a hybrid deterministic engine: Python selects sources, extracts URL content with `defuddle`, computes hashes, asks Codex for a JSON ingest plan, validates the whole plan, and only then writes wiki files. After successful write workflows, the CLI refreshes QMD with `qmd update` and `qmd embed`. Other synthesis-heavy commands still dispatch to Codex with the matching skill. Use `--print-prompt` to inspect the generated ingest packet or dispatch prompt instead:
+`a-inf ingest` now runs a hybrid deterministic engine: Python selects sources, extracts URL content with `defuddle`, optionally extracts PDF markdown with MinerU, computes hashes, asks Codex for a JSON ingest plan, validates the whole plan, and only then writes wiki files. After successful write workflows, the CLI refreshes QMD with `qmd update` and `qmd embed`. Other synthesis-heavy commands still dispatch to Codex with the matching skill. Use `--print-prompt` to inspect the generated ingest packet or dispatch prompt instead:
 
 ```bash
 a-inf ingest paper-xx --print-prompt
@@ -95,7 +95,7 @@ Most command dispatch is intentionally thin during this migration, but document 
 a-inf ingest paper-xx
 ```
 
-selects new or modified sources, writes a run packet under `.a-inf/runs/`, asks Codex to create `.a-inf/runs/<run-id>/plan.json`, validates the JSON, then applies page, manifest, index, log, and hot-cache updates deterministically. URL sources are fetched with `defuddle` before planning and land under `references/`; `--data` still routes to its specialized skill.
+selects new or modified sources, writes a run packet under `.a-inf/runs/`, asks Codex to create `.a-inf/runs/<run-id>/plan.json`, validates the JSON, then applies page, manifest, index, log, and hot-cache updates deterministically. URL sources are fetched with `defuddle` before planning and land under `references/`; PDF sources can include cached MinerU markdown under `.a-inf/mineru/`; `--data` still routes to its specialized skill.
 
 The default mode is append. Full and raw modes are available:
 
@@ -128,6 +128,13 @@ Optional environment variables from `.env.example` still apply for skill workflo
 - `OBSIDIAN_RAW_DIR`
 - `QMD_WIKI_COLLECTION`
 - `QMD_PAPERS_COLLECTION`
+- `A_INF_PDF_EXTRACTOR` (`auto`, `mineru`, or `none`)
+- `A_INF_MINERU_BIN`
+- `A_INF_MINERU_METHOD`
+- `A_INF_MINERU_BACKEND`
+- `A_INF_MINERU_LANG`
+- `A_INF_MINERU_FORMULA`
+- `A_INF_MINERU_TABLE`
 
 ## Skills
 

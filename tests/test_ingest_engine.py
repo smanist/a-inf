@@ -172,6 +172,33 @@ def fake_run_with_defuddle(markdown: str) -> object:
     return fake_run
 
 
+def fake_run_with_mineru(markdown: str, content_list: list[dict[str, object]] | None = None) -> object:
+    def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        if command[-1] == "--version" and Path(command[0]).name == "qmd":
+            return subprocess.CompletedProcess(command, 0, stdout="qmd 2.1.0\n", stderr="")
+        if command == ["/usr/local/bin/mineru", "--version"]:
+            return subprocess.CompletedProcess(command, 0, stdout="mineru, version 2.7.6\n", stderr="")
+        if Path(command[0]).name == "qmd" and command[1:] == ["collection", "show", "vault"]:
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        if Path(command[0]).name == "qmd" and command[1:] in (["update"], ["embed"]):
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        if command and command[0] == "/usr/local/bin/mineru":
+            source = Path(command[command.index("-p") + 1])
+            output = Path(command[command.index("-o") + 1])
+            method = command[command.index("-m") + 1] if "-m" in command else "auto"
+            extract_dir = output / source.stem / method
+            extract_dir.mkdir(parents=True, exist_ok=True)
+            (extract_dir / f"{source.stem}.md").write_text(markdown, encoding="utf-8")
+            (extract_dir / f"{source.stem}_content_list.json").write_text(
+                json.dumps(content_list or [{"type": "text", "text": markdown, "page_idx": 0}]),
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        raise AssertionError(f"unexpected command: {command}")
+
+    return fake_run
+
+
 def test_ingest_print_prompt_emits_packet_without_writes(tmp_path: Path, monkeypatch, capsys) -> None:
     isolate_qmd_home(tmp_path, monkeypatch)
     vault = make_vault(tmp_path)
@@ -359,6 +386,82 @@ def test_url_ingest_fails_before_planning_when_defuddle_fails_or_empty(tmp_path:
         "run",
         lambda command, **_kwargs: subprocess.CompletedProcess(command, 0, stdout="  \n", stderr=""),
     )
+
+    assert cli.cmd_dispatch(args) == 1
+    assert not (vault / ".a-inf" / "runs").exists()
+
+
+def test_pdf_source_packet_uses_mineru_markdown(tmp_path: Path, monkeypatch, capsys) -> None:
+    isolate_qmd_home(tmp_path, monkeypatch)
+    vault = make_vault(tmp_path)
+    (vault / ".env").write_text(
+        "QMD_WIKI_COLLECTION=vault\nQMD_PAPERS_COLLECTION=vault\nA_INF_PDF_EXTRACTOR=mineru\n",
+        encoding="utf-8",
+    )
+    source = vault / "_raw" / "paper.pdf"
+    source.write_bytes(b"%PDF fake test source")
+    markdown = "# Paper Title\n\nMinerU extracted PDF body."
+    args = IngestArgs([str(source)])
+    args.print_prompt = True
+
+    monkeypatch.chdir(vault)
+    monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}" if name in {"mineru", "qmd"} else None)
+    monkeypatch.setattr(
+        ingest.subprocess,
+        "run",
+        fake_run_with_mineru(markdown, [{"type": "text", "text": "Paper Title", "page_idx": 0}]),
+    )
+
+    assert cli.cmd_dispatch(args) == 0
+    packet = json.loads(capsys.readouterr().out)
+    source_packet = packet["sources"][0]
+    assert source_packet["source_type"] == "pdf"
+    assert source_packet["content_hash"] == ingest.hash_file(source)
+    extract = source_packet["pdf_extract"]
+    assert extract["status"] == "extracted"
+    assert extract["extractor"] == "mineru"
+    assert extract["version"] == "mineru, version 2.7.6"
+    assert extract["markdown"] == markdown
+    assert extract["content_list_sample"] == [{"type": "text", "page_idx": 0, "text": "Paper Title"}]
+    assert Path(extract["markdown_path"]).is_file()
+    assert "pdf_extract" in packet["codex_prompt"]
+
+
+def test_pdf_ingest_auto_continues_when_mineru_is_missing(tmp_path: Path, monkeypatch, capsys) -> None:
+    isolate_qmd_home(tmp_path, monkeypatch)
+    vault = make_vault(tmp_path)
+    (vault / ".env").write_text(
+        "QMD_WIKI_COLLECTION=vault\nQMD_PAPERS_COLLECTION=vault\nA_INF_PDF_EXTRACTOR=auto\n",
+        encoding="utf-8",
+    )
+    source = vault / "_raw" / "paper.pdf"
+    source.write_bytes(b"%PDF fake test source")
+    args = IngestArgs([str(source)])
+    args.print_prompt = True
+
+    monkeypatch.chdir(vault)
+    monkeypatch.setattr(ingest.shutil, "which", lambda name: None if name == "mineru" else f"/usr/local/bin/{name}")
+    monkeypatch.setattr(ingest.subprocess, "run", fake_qmd_run)
+
+    assert cli.cmd_dispatch(args) == 0
+    packet = json.loads(capsys.readouterr().out)
+    extract = packet["sources"][0]["pdf_extract"]
+    assert extract["status"] == "unavailable"
+    assert "mineru executable not found" in extract["warnings"][0]
+
+
+def test_pdf_ingest_explicit_mineru_fails_when_missing(tmp_path: Path, monkeypatch) -> None:
+    isolate_qmd_home(tmp_path, monkeypatch)
+    vault = make_vault(tmp_path)
+    (vault / ".env").write_text("A_INF_PDF_EXTRACTOR=mineru\n", encoding="utf-8")
+    source = vault / "_raw" / "paper.pdf"
+    source.write_bytes(b"%PDF fake test source")
+    args = IngestArgs([str(source)])
+    args.print_prompt = True
+
+    monkeypatch.chdir(vault)
+    monkeypatch.setattr(ingest.shutil, "which", lambda name: None if name == "mineru" else f"/usr/local/bin/{name}")
+    monkeypatch.setattr(ingest.subprocess, "run", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("subprocess.run called")))
 
     assert cli.cmd_dispatch(args) == 1
     assert not (vault / ".a-inf" / "runs").exists()

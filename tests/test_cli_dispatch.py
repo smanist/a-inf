@@ -135,6 +135,28 @@ def test_status_command_reports_delta_without_codex(
     assert "**Recommendation:** No action" in output
 
 
+def test_status_command_reports_pdf_sources(tmp_path: Path, monkeypatch, capsys) -> None:
+    vault = tmp_path / "vault"
+    sources = tmp_path / "sources"
+    vault.mkdir()
+    sources.mkdir()
+    source = sources / "paper.pdf"
+    source.write_bytes(b"%PDF source")
+    (vault / ".manifest.json").write_text('{"version": 1, "sources": {}, "projects": {}, "stats": {}}\n', encoding="utf-8")
+    (vault / ".env").write_text(f"OBSIDIAN_SOURCES_DIR={sources}\n", encoding="utf-8")
+
+    monkeypatch.chdir(vault)
+    monkeypatch.setattr(cli.shutil, "which", lambda _: (_ for _ in ()).throw(AssertionError("codex called")))
+
+    result = cli.cmd_status(Args())
+
+    assert result == 0
+    output = capsys.readouterr().out
+    assert "paper.pdf" in output
+    assert "pdf" in output
+    assert "**Ready to ingest:** 1 new + 0 modified = 1 sources" in output
+
+
 def test_status_insights_routes_to_wiki_insights(
     tmp_path: Path, monkeypatch
 ) -> None:
