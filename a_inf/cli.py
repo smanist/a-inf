@@ -137,6 +137,22 @@ def build_parser() -> argparse.ArgumentParser:
                 action="store_true",
                 help="Route ingest through data-ingest for exports, logs, and transcripts.",
             )
+            cmd.add_argument(
+                "--mode",
+                choices=["append", "full", "raw"],
+                default="append",
+                help="Ingest mode for deterministic wiki-ingest. Default: append.",
+            )
+            cmd.add_argument(
+                "--full",
+                action="store_true",
+                help="Alias for --mode full.",
+            )
+            cmd.add_argument(
+                "--raw",
+                action="store_true",
+                help="Alias for --mode raw.",
+            )
         cmd.add_argument("args", nargs="*", help="Arguments passed to the workflow.")
         add_dispatch_options(cmd)
         cmd.set_defaults(func=cmd_dispatch, alias=name)
@@ -227,6 +243,10 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     alias = args.alias
     if alias == "ingest":
         skill = infer_ingest_skill(args.args, data=getattr(args, "data", False))
+        if skill == "wiki-ingest":
+            from a_inf.ingest import run_hybrid_ingest
+
+            return run_hybrid_ingest(args, find_vault_root(Path.cwd()))
     else:
         skill = SKILL_ALIASES[alias]
     dispatch = build_dispatch(skill, args.args)
@@ -910,17 +930,14 @@ def ensure_agents_section(path: Path) -> None:
 
 
 def ensure_gitignore_section(path: Path) -> None:
-    section = "\n".join(
-        [
-            "# a-inf local configuration",
-            ".env",
-            ".a-inf/config.toml",
-            "",
-        ]
-    )
+    required_entries = [".env", ".a-inf/config.toml", ".a-inf/runs/"]
+    section = "\n".join(["# a-inf local configuration", *required_entries, ""])
     if path.exists():
         current = path.read_text(encoding="utf-8")
         if "# a-inf local configuration" in current:
+            missing = [entry for entry in required_entries if entry not in current]
+            if missing:
+                path.write_text(current.rstrip() + "\n" + "\n".join(missing) + "\n", encoding="utf-8")
             return
         path.write_text(current.rstrip() + "\n\n" + section, encoding="utf-8")
     else:

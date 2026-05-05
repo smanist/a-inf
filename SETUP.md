@@ -71,7 +71,7 @@ a-inf update
 a-inf history
 ```
 
-By default, non-init workflows invoke `codex exec --sandbox workspace-write --cd <vault>` with a prompt generated from the relevant skill. To inspect the prompt without invoking Codex:
+Most non-init workflows invoke `codex exec --sandbox workspace-write --cd <vault>` with a prompt generated from the relevant skill. `a-inf ingest` is the exception: it runs deterministic source selection and plan validation around a Codex-generated JSON ingest plan. To inspect the ingest packet without invoking Codex:
 
 ```bash
 a-inf ingest paper-xx --print-prompt
@@ -84,6 +84,14 @@ a-inf ingest /path/to/source.md --add-dir /path/to
 ```
 
 `a-inf status` runs locally. `a-inf history` automatically grants Codex access to `CODEX_HISTORY_PATH` or `~/.codex` when that directory exists.
+
+Ingest modes:
+
+```bash
+a-inf ingest --mode append  # default, only new or modified sources
+a-inf ingest --mode full    # all supported configured sources
+a-inf ingest --raw          # promote files from _raw/
+```
 
 ## Command Mapping
 

@@ -26,7 +26,7 @@ a-inf query "what do I know about rate limiting?"
 
 `a-inf init` is local and deterministic. It creates the vault folders, seed files, `.a-inf/config.toml`, a compatibility `.env`, Obsidian config, `.gitignore` entries for local config, and local skill symlinks under `.skills/`.
 
-The other commands generate a Codex prompt from the matching skill and invoke `codex exec --sandbox workspace-write --cd <vault>` when Codex is available. Use `--print-prompt` to inspect the generated prompt instead:
+`a-inf ingest` now runs a hybrid deterministic engine: Python selects sources, computes hashes, asks Codex for a JSON ingest plan, validates the whole plan, and only then writes wiki files. Other synthesis-heavy commands still dispatch to Codex with the matching skill. Use `--print-prompt` to inspect the generated ingest packet or dispatch prompt instead:
 
 ```bash
 a-inf ingest paper-xx --print-prompt
@@ -66,7 +66,7 @@ If `AGENTS.md` already exists, `a-inf init` appends a small marked `a-inf` secti
 | Command | Workflow |
 |---|---|
 | `a-inf init [path]` | Initialize a repo as a vault |
-| `a-inf ingest <source...>` | Ingest documents or staged content |
+| `a-inf ingest <source...>` | Hybrid deterministic document ingest |
 | `a-inf ingest <url>` | Route URL ingest to `ingest-url` |
 | `a-inf query <question>` | Answer from the compiled vault |
 | `a-inf status` | Show ingest state and deltas locally |
@@ -87,19 +87,22 @@ If `AGENTS.md` already exists, `a-inf init` appends a small marked `a-inf` secti
 
 ## Codex Dispatch
 
-Command dispatch is intentionally thin during this migration. For example:
+Most command dispatch is intentionally thin during this migration, but document ingest has moved to a two-phase engine. For example:
 
 ```bash
 a-inf ingest paper-xx
 ```
 
-maps to `wiki-ingest`, constructs a prompt with the vault path, selected skill file, and CLI arguments, then runs:
+selects new or modified sources, writes a run packet under `.a-inf/runs/`, asks Codex to create `.a-inf/runs/<run-id>/plan.json`, validates the JSON, then applies page, manifest, index, log, and hot-cache updates deterministically. URLs and `--data` still route to their specialized skills.
+
+The default mode is append. Full and raw modes are available:
 
 ```bash
-codex exec --sandbox workspace-write --cd <vault> "<generated prompt>"
+a-inf ingest --mode full
+a-inf ingest --raw
 ```
 
-Use `--sandbox read-only` for dry inspection workflows, or `--add-dir <path>` when an ingest source lives outside the vault and Codex needs access to it. `a-inf history` automatically adds `CODEX_HISTORY_PATH` or `~/.codex` when that directory exists.
+Use `--sandbox read-only` for dry inspection workflows that still invoke Codex, or `--add-dir <path>` when an ingest source lives outside the vault and Codex needs access to it. `a-inf history` automatically adds `CODEX_HISTORY_PATH` or `~/.codex` when that directory exists.
 
 Commands that can be fully deterministic should move into Python over time. `a-inf status` is now deterministic local Python; commands that require synthesis can keep using Codex behind the CLI.
 

@@ -46,7 +46,9 @@ def test_init_creates_vault_structure_and_local_skill_links(tmp_path: Path) -> N
     assert (vault / "hot.md").is_file()
     assert (vault / "_meta" / "taxonomy.md").is_file()
     assert (vault / "AGENTS.md").read_text(encoding="utf-8").count("<!-- BEGIN A-INF -->") == 1
-    assert "# a-inf local configuration" in (vault / ".gitignore").read_text(encoding="utf-8")
+    gitignore = (vault / ".gitignore").read_text(encoding="utf-8")
+    assert "# a-inf local configuration" in gitignore
+    assert ".a-inf/runs/" in gitignore
 
     manifest = json.loads((vault / ".manifest.json").read_text(encoding="utf-8"))
     assert manifest["version"] == 1
@@ -70,3 +72,19 @@ def test_init_is_idempotent(tmp_path: Path) -> None:
     gitignore = (vault / ".gitignore").read_text(encoding="utf-8")
     assert agents.count("<!-- BEGIN A-INF -->") == 1
     assert gitignore.count("# a-inf local configuration") == 1
+
+
+def test_init_upgrades_existing_gitignore_section(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / ".gitignore").write_text(
+        "# a-inf local configuration\n.env\n.a-inf/config.toml\n",
+        encoding="utf-8",
+    )
+    skills_source = Path(__file__).resolve().parents[1] / ".skills"
+
+    assert cmd_init(Args(vault, skills_source)) == 0
+
+    gitignore = (vault / ".gitignore").read_text(encoding="utf-8")
+    assert gitignore.count("# a-inf local configuration") == 1
+    assert ".a-inf/runs/" in gitignore
