@@ -9,9 +9,10 @@ The markdown skills in `.skills/` are still the workflow specs, but users should
 ```bash
 pip install -e .
 npm install -g @tobilu/qmd
+npm install -g defuddle
 ```
 
-This exposes the `a-inf` command from the current checkout. `qmd` is a required runtime CLI dependency for `a-inf ingest`; `a-inf` keeps QMD's writable SQLite/sqlite-vec index and collection config under `.a-inf/qmd/`.
+This exposes the `a-inf` command from the current checkout. `qmd` is a required runtime CLI dependency for `a-inf ingest`; `defuddle` is required for URL ingest via `a-inf ingest <url>`. `a-inf` keeps QMD's writable SQLite/sqlite-vec index and collection config under `.a-inf/qmd/`.
 
 ## Quick Start
 

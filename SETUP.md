@@ -7,15 +7,17 @@
 ```bash
 pip install -e .
 npm install -g @tobilu/qmd
+npm install -g defuddle
 ```
 
-QMD uses a SQLite-backed local index, including sqlite-vec data. `a-inf` keeps its QMD state repo-local under `.a-inf/qmd/` and passes `INDEX_PATH`, `XDG_CACHE_HOME`, and `XDG_CONFIG_HOME` to Codex so sandboxed QMD queries open the same writable database.
+QMD uses a SQLite-backed local index, including sqlite-vec data. `a-inf` keeps its QMD state repo-local under `.a-inf/qmd/` and passes `INDEX_PATH`, `XDG_CACHE_HOME`, and `XDG_CONFIG_HOME` to Codex so sandboxed QMD queries open the same writable database. `defuddle` is required for URL ingest (`a-inf ingest <url>`) and is not used for normal file ingest.
 
 Verify:
 
 ```bash
 a-inf --help
 qmd --version
+defuddle --version
 ```
 
 ## Initialize A Vault
