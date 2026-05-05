@@ -95,7 +95,7 @@ Most command dispatch is intentionally thin during this migration, but document 
 a-inf ingest paper-xx
 ```
 
-selects new or modified sources, writes a run packet under `.a-inf/runs/`, asks Codex to create `.a-inf/runs/<run-id>/plan.json`, validates the JSON, then applies page, manifest, index, log, and hot-cache updates deterministically. URL sources are fetched with `defuddle` before planning and land under `references/`; PDF sources can include cached MinerU markdown under `.a-inf/mineru/`; `--data` still routes to its specialized skill.
+selects new or modified sources, writes a run packet under `.a-inf/runs/`, asks Codex to create `.a-inf/runs/<run-id>/plan.json`, validates the JSON, then applies page, manifest, index, log, and hot-cache updates deterministically. URL sources are fetched with `defuddle` before planning and land under `references/`; PDF sources can include cached MinerU markdown under `.a-inf/mineru/`; exports, logs, and transcripts use the same hybrid ingest path.
 
 The default mode is append. Full and raw modes are available:
 
@@ -144,7 +144,6 @@ The bundled skills remain the source of truth for language-model workflows:
 .skills/
 ├── codex-history-ingest/
 ├── cross-linker/
-├── data-ingest/
 ├── graph-colorize/
 ├── llm-wiki/
 ├── tag-taxonomy/

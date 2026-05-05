@@ -34,7 +34,6 @@ VAULT_DIRS = [
 
 SKILL_ALIASES = {
     "ingest": "wiki-ingest",
-    "data-ingest": "data-ingest",
     "query": "wiki-query",
     "update": "wiki-update",
     "history": "codex-history-ingest",
@@ -53,7 +52,6 @@ SKILL_ALIASES = {
 
 QMD_SYNC_SKILLS = {
     "wiki-ingest",
-    "data-ingest",
     "wiki-update",
     "codex-history-ingest",
     "wiki-history-ingest",
@@ -152,7 +150,7 @@ def build_parser() -> argparse.ArgumentParser:
             cmd.add_argument(
                 "--data",
                 action="store_true",
-                help="Route ingest through data-ingest for exports, logs, and transcripts.",
+                help="Compatibility flag; exports, logs, and transcripts use the normal hybrid ingest path.",
             )
             cmd.add_argument(
                 "--mode",
@@ -872,9 +870,6 @@ def is_path_source(value: str) -> bool:
 
 
 def infer_ingest_skill(workflow_args: list[str], data: bool = False) -> str:
-    non_options = [arg for arg in workflow_args if not arg.startswith("-")]
-    if data:
-        return "data-ingest"
     return "wiki-ingest"
 
 

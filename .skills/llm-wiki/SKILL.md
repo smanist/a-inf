@@ -290,7 +290,6 @@ source_quality_score = avg(quality score per distinct source_id)
 | `*-history-ingest` | 0.42 | `draft` |
 | `wiki-update` | 0.59 | `draft` |
 | `wiki-synthesize` | `min(input_pages.base_confidence)` | `draft` |
-| `data-ingest` | 0.37 | `draft` |
 
 ### Lifecycle state machine
 
@@ -398,6 +397,5 @@ For details on specific operations, see the companion skills:
 - **wiki-rebuild** — Archive current wiki, rebuild from scratch, or restore from archive
 - **wiki-ingest** — Distill source documents into wiki pages
 - **codex-history-ingest** — Ingest Codex CLI session history
-- **data-ingest** — Ingest any raw text data
 - **wiki-query** — Answer questions against the wiki
 - **wiki-lint** — Audit and maintain wiki health

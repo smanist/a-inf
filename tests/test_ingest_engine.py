@@ -716,7 +716,7 @@ def test_append_mode_includes_modified_url_sources_in_packet(tmp_path: Path, mon
     assert packet["sources"][0]["status"] == "modified"
 
 
-def test_url_ingest_uses_hybrid_path_and_data_ingest_keeps_dispatch_path(tmp_path: Path, monkeypatch) -> None:
+def test_url_ingest_and_data_flag_use_hybrid_path(tmp_path: Path, monkeypatch) -> None:
     vault = make_vault(tmp_path)
     calls: list[str] = []
 
@@ -736,7 +736,7 @@ def test_url_ingest_uses_hybrid_path_and_data_ingest_keeps_dispatch_path(tmp_pat
     data_args = IngestArgs(["export.json"])
     data_args.data = True
     assert cli.cmd_dispatch(data_args) == 0
-    assert calls == ["wiki-ingest", "data-ingest"]
+    assert calls == ["wiki-ingest", "wiki-ingest"]
 
 
 def test_raw_delete_outside_raw_dir_is_rejected(tmp_path: Path) -> None:

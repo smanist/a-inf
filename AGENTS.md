@@ -49,7 +49,7 @@ Prefer CLI commands for user-facing workflows. Skills live in `.skills/<name>/SK
 | "import my Codex history" | `a-inf history` | `codex-history-ingest` |
 | "add this URL" / "ingest this link" | `a-inf ingest <url>` | `wiki-ingest` |
 | "ingest" / "process these docs" | `a-inf ingest <source>` | `wiki-ingest` |
-| "process this export" / logs, transcripts | `a-inf ingest --data <source>` | `data-ingest` |
+| "process this export" / logs, transcripts | `a-inf ingest <source>` | `wiki-ingest` |
 | "what's the status" / "show the delta" | `a-inf status` | deterministic CLI |
 | "wiki insights" / "hubs" / "wiki structure" | `a-inf insights` | `wiki-insights` |
 | "what do I know about X" / any question | `a-inf query "X"` | `wiki-query` |

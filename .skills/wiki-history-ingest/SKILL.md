@@ -8,7 +8,7 @@ description: >
 
 # Codex History Ingest Router
 
-This is a thin compatibility router for **Codex history sources only**. It does not replace `wiki-ingest` for documents or `data-ingest` for generic exports.
+This is a thin compatibility router for **Codex history sources only**. It does not replace `wiki-ingest` for documents, generic exports, logs, or transcripts.
 
 ## Routing
 
@@ -31,5 +31,5 @@ If the user asks to ingest "agent history" without specifying a source, interpre
 ## UX Convention
 
 - Use `wiki-ingest` for documents and staged content.
-- Use `data-ingest` for generic exports, logs, and transcripts.
+- Use `wiki-ingest` for generic exports, logs, and transcripts.
 - Use `wiki-history-ingest` or `codex-history-ingest` for local Codex sessions.

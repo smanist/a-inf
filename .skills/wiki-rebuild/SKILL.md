@@ -100,8 +100,7 @@ Tell the user the vault is cleared and ready for a full re-ingest. They can now 
 1. `wiki-status` — to see all sources as "new"
 2. `codex-history-ingest` — to reprocess Codex history
 3. `codex-history-ingest` — to reprocess Codex session history
-4. `wiki-ingest` — to reprocess documents
-5. `data-ingest` — to reprocess any other data
+4. `wiki-ingest` — to reprocess documents and other supported sources
 
 Each of these will rebuild the manifest as they go.
 
