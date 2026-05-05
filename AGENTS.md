@@ -1,6 +1,6 @@
 # Obsidian Wiki — Agent Context
 
-A **CLI-first framework** for building and maintaining an Obsidian knowledge base. The `a-inf` CLI is the user-facing interface; markdown skills in `.skills/` remain the workflow specs used directly or through Codex dispatch.
+A **CLI-first framework** for building and maintaining an Obsidian knowledge base. The `a-inf` CLI is the user-facing interface; markdown skills in `.skills/` remain the bundled workflow specs, with initialized local Codex symlinks under `.agents/skills/`.
 
 ## Configuration
 
@@ -41,7 +41,7 @@ Every wiki page has required frontmatter: `title`, `category`, `tags`, `sources`
 
 ## Skill Routing
 
-Prefer CLI commands for user-facing workflows. Skills live in `.skills/<name>/SKILL.md` and are the underlying execution specs.
+Prefer CLI commands for user-facing workflows. Bundled skills live in `.skills/<name>/SKILL.md`; initialized local Codex skills are symlinked at `.agents/skills/<name>/SKILL.md`.
 
 | User says something like… | CLI | Execution |
 |---|---|---|

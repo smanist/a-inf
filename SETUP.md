@@ -44,7 +44,7 @@ Initialization creates:
 - `_meta/taxonomy.md`
 - `.obsidian/app.json` and `.obsidian/appearance.json`
 - vault folders: `concepts/`, `entities/`, `skills/`, `references/`, `synthesis/`, `journal/`, `projects/`, `_archives/`, `_raw/`
-- `.skills/<skill-name>` symlinks to this checkout's bundled skills
+- `.agents/skills/<skill-name>` symlinks to this checkout's bundled skills
 - an `a-inf` section in `AGENTS.md`, unless `--no-agents` is passed
 
 The generated `.env` defaults `QMD_WIKI_COLLECTION` and `QMD_PAPERS_COLLECTION` to the initialized repo directory name. Init also creates that QMD collection and runs the first `qmd update` / `qmd embed`.

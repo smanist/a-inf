@@ -17,6 +17,8 @@ from urllib.parse import urlparse
 from a_inf.qmd import ensure_qmd_collection, ensure_qmd_state_dirs, qmd_env, qmd_state_dirs, sync_qmd
 
 
+LOCAL_SKILLS_DIR = Path(".agents") / "skills"
+
 VAULT_DIRS = [
     "concepts",
     "entities",
@@ -29,7 +31,7 @@ VAULT_DIRS = [
     "_raw",
     "_meta",
     ".obsidian",
-    ".skills",
+    str(LOCAL_SKILLS_DIR),
 ]
 
 SKILL_ALIASES = {
@@ -237,7 +239,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     write_local_config(vault, skills_source)
     write_file_if_missing(vault / ".env", env_template(vault))
 
-    linked = install_skills(skills_source, vault / ".skills", copy=args.copy_skills)
+    linked = install_skills(skills_source, vault / LOCAL_SKILLS_DIR, copy=args.copy_skills)
 
     if not args.no_agents:
         ensure_agents_section(vault / "AGENTS.md")
@@ -334,10 +336,14 @@ def run_dispatch(dispatch: Dispatch, args: argparse.Namespace) -> int:
 
 def build_dispatch(skill: str, workflow_args: list[str]) -> Dispatch:
     vault = find_vault_root(Path.cwd())
-    skill_path = vault / ".skills" / skill / "SKILL.md"
+    skill_path = vault / LOCAL_SKILLS_DIR / skill / "SKILL.md"
     args_text = " ".join(workflow_args).strip()
     if not skill_path.exists():
-        skill_path = resolve_skills_source(None) / skill / "SKILL.md"
+        legacy_skill_path = vault / ".skills" / skill / "SKILL.md"
+        if legacy_skill_path.exists():
+            skill_path = legacy_skill_path
+        else:
+            skill_path = resolve_skills_source(None) / skill / "SKILL.md"
 
     prompt = (
         f"Use the `{skill}` skill to operate on this a-inf vault.\n\n"
@@ -896,6 +902,7 @@ def resolve_skills_source(explicit: Path | None) -> Path:
 
 
 def install_skills(source: Path, dest: Path, copy: bool = False) -> int:
+    dest.mkdir(parents=True, exist_ok=True)
     count = 0
     for skill_dir in sorted(path for path in source.iterdir() if path.is_dir()):
         if not (skill_dir / "SKILL.md").is_file():
@@ -1107,7 +1114,7 @@ def agents_section() -> str:
 This repository is initialized as an a-inf Obsidian wiki vault.
 
 - Prefer the `a-inf` CLI for workflows: `a-inf ingest`, `a-inf query`, `a-inf status`, `a-inf update`.
-- Local skill instructions are symlinked under `.skills/<name>/SKILL.md`.
+- Local skill instructions are symlinked under `.agents/skills/<name>/SKILL.md`.
 - The CLI may dispatch complex workflows to Codex; when it does, follow the selected skill file exactly.
 - Keep `.manifest.json`, `index.md`, `log.md`, and `hot.md` current after write operations.
 - Use `[[wikilinks]]` unless local config sets `OBSIDIAN_LINK_FORMAT=markdown`.

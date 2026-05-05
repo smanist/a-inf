@@ -43,7 +43,8 @@ def test_init_creates_vault_structure_and_local_skill_links(tmp_path: Path, monk
         "_raw",
         "_meta",
         ".obsidian",
-        ".skills",
+        ".agents",
+        ".agents/skills",
     ]:
         assert (vault / dirname).is_dir()
 
@@ -68,10 +69,10 @@ def test_init_creates_vault_structure_and_local_skill_links(tmp_path: Path, monk
     assert manifest["version"] == 1
     assert manifest["sources"] == {}
 
-    skill_links = list((vault / ".skills").iterdir())
+    skill_links = list((vault / ".agents" / "skills").iterdir())
     assert skill_links
     assert all(path.is_symlink() for path in skill_links)
-    assert not (vault / ".skills" / "wiki-setup").exists()
+    assert not (vault / ".agents" / "skills" / "wiki-setup").exists()
 
 
 def test_init_is_idempotent(tmp_path: Path, monkeypatch) -> None:

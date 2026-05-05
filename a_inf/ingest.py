@@ -800,6 +800,7 @@ def build_codex_prompt(
 
 def read_wiki_ingest_skill(vault: Path) -> str:
     candidates = [
+        vault / ".agents" / "skills" / "wiki-ingest" / "SKILL.md",
         vault / ".skills" / "wiki-ingest" / "SKILL.md",
         Path(__file__).resolve().parents[1] / ".skills" / "wiki-ingest" / "SKILL.md",
     ]

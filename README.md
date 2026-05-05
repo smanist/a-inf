@@ -26,7 +26,7 @@ a-inf insights
 a-inf query "what do I know about rate limiting?"
 ```
 
-`a-inf init` is local and deterministic. It creates the vault folders, seed files, `.a-inf/config.toml`, a compatibility `.env`, Obsidian config, `.gitignore` entries for local config, and local skill symlinks under `.skills/`. New `.env` files default `QMD_WIKI_COLLECTION` and `QMD_PAPERS_COLLECTION` to the repo directory name, and init creates the matching QMD collection.
+`a-inf init` is local and deterministic. It creates the vault folders, seed files, `.a-inf/config.toml`, a compatibility `.env`, Obsidian config, `.gitignore` entries for local config, and local Codex skill symlinks under `.agents/skills/`. New `.env` files default `QMD_WIKI_COLLECTION` and `QMD_PAPERS_COLLECTION` to the repo directory name, and init creates the matching QMD collection.
 
 `a-inf ingest` now runs a hybrid deterministic engine: Python selects sources, extracts URL content with `defuddle`, optionally extracts PDF markdown with MinerU, computes hashes, asks Codex for a JSON ingest plan, validates the whole plan, and only then writes wiki files. After successful write workflows, the CLI refreshes QMD with `qmd update` and `qmd embed`. Other synthesis-heavy commands still dispatch to Codex with the matching skill. Use `--print-prompt` to inspect the generated ingest packet or dispatch prompt instead:
 
@@ -51,7 +51,8 @@ repo/
 │   └── taxonomy.md
 ├── _raw/
 ├── .obsidian/
-├── .skills/                 # symlinks to bundled workflow skills
+├── .agents/
+│   └── skills/              # symlinks to bundled workflow skills
 ├── concepts/
 ├── entities/
 ├── skills/
