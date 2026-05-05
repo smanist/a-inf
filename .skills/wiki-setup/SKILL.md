@@ -1,16 +1,19 @@
 ---
 name: wiki-setup
 description: >
-  Initialize a new Obsidian wiki vault with the correct structure, special files, and configuration.
-  Use this skill when the user wants to set up a new wiki from scratch, initialize the vault structure,
-  create the .env file, or says things like "set up my wiki", "initialize obsidian", "create a new vault",
-  "get started with the wiki". Also use when the user needs to reconfigure their existing vault or
-  fix a broken setup.
+  Legacy skill spec for initializing an Obsidian wiki vault. Prefer `a-inf init` for normal use.
+  Use this skill only when Codex is explicitly repairing setup or explaining the initialization workflow.
 ---
 
 # Obsidian Setup — Vault Initialization
 
-You are setting up a new Obsidian wiki vault (or repairing an existing one).
+Prefer the CLI path:
+
+```bash
+a-inf init
+```
+
+The CLI creates folders, seed files, `.a-inf/config.toml`, Obsidian config, and local skill symlinks. Use the rest of this skill as the legacy/manual setup contract or as repair guidance.
 
 ## Step 1: Create .env
 
@@ -59,7 +62,7 @@ title: Wiki Index
 
 ## Concepts
 
-*No pages yet. Use `wiki-ingest` to add your first source.*
+*No pages yet. Use `a-inf ingest <source>` to add your first source.*
 
 ## Entities
 
@@ -156,7 +159,7 @@ Run a quick sanity check:
 
 Report the results and tell the user they can now:
 1. Open the vault in Obsidian (File → Open Vault → select the directory)
-2. Run `wiki-status` to see what's available to ingest
-3. Run `wiki-ingest` to add their first sources
-4. Run `codex-history-ingest` to mine their Codex sessions
-5. Run `wiki-status` again anytime to check the delta
+2. Run `a-inf status` to see what's available to ingest
+3. Run `a-inf ingest <source>` to add their first sources
+4. Run `a-inf history` to mine their Codex sessions
+5. Run `a-inf status` again anytime to check the delta

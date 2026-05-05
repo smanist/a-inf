@@ -1,89 +1,54 @@
-# obsidian-wiki
+# a-inf
 
-A Codex skill pack for building and maintaining an Obsidian knowledge base using Andrej Karpathy's "LLM Wiki" pattern: compile durable knowledge once into interconnected markdown pages, then keep it current as you work.
+`a-inf` is a CLI for turning a repository into an Obsidian-backed knowledge vault and operating it through repeatable commands.
 
-The repo is skill-only. There are no setup scripts, runtime dependencies, or services. Codex reads markdown instructions from `.skills/`, writes standard Obsidian-compatible markdown into your vault, and maintains the wiki graph over time.
+The markdown skills in `.skills/` are still the workflow specs, but users should not need to call those skills directly. The CLI handles local initialization and dispatches higher-level operations such as `a-inf ingest paper-xx`. For complex language-model work, the CLI can invoke Codex with the selected skill.
 
-## What It Does
+## Install For Development
 
-- Distills documents, notes, transcripts, exports, and Codex sessions into wiki pages.
-- Updates existing pages instead of appending duplicate notes.
-- Maintains `index.md`, `log.md`, `hot.md`, and `.manifest.json`.
-- Uses `[[wikilinks]]` by default so the vault works natively in Obsidian.
-- Supports project pages, graph exports, linting, dashboards, cross-linking, and synthesis.
+```bash
+pip install -e .
+```
+
+This exposes the `a-inf` command from the current checkout.
 
 ## Quick Start
 
-1. Copy the example config:
-
-   ```bash
-   cp .env.example .env
-   ```
-
-2. Set `OBSIDIAN_VAULT_PATH` in `.env` to the absolute path of your Obsidian vault:
-
-   ```env
-   OBSIDIAN_VAULT_PATH=/path/to/your/vault
-   ```
-
-3. Open this repo with Codex and ask for the workflow you want:
-
-   ```text
-   set up my wiki
-   ingest these docs
-   import my Codex history
-   what do I know about rate limiting?
-   ```
-
-For global use from other projects, keep a global config at `~/.obsidian-wiki/config`:
-
-```env
-OBSIDIAN_VAULT_PATH=/path/to/your/vault
-OBSIDIAN_WIKI_REPO=/path/to/obsidian-wiki
-```
-
-Then copy or symlink the skills into Codex's skill directory:
+From the repository you want to use as a vault:
 
 ```bash
-mkdir -p ~/.codex/skills
-ln -s /path/to/obsidian-wiki/.skills/* ~/.codex/skills/
+a-inf init
+a-inf ingest paper-xx
+a-inf status
+a-inf query "what do I know about rate limiting?"
 ```
 
-## Codex Compatibility
+`a-inf init` is local and deterministic. It creates the vault folders, seed files, `.a-inf/config.toml`, a compatibility `.env`, Obsidian config, `.gitignore` entries for local config, and local skill symlinks under `.skills/`.
 
-Codex uses:
+The other commands generate a Codex prompt from the matching skill and invoke `codex exec` when Codex is available. Use `--print-prompt` to inspect the generated prompt instead:
 
-- `AGENTS.md` for always-on project context and routing.
-- `.skills/<name>/SKILL.md` for workflow instructions.
-- `~/.codex/skills/` when you want the skills available outside this repo.
-- `$skill-name` style invocation when explicitly naming a skill, although natural language works too.
+```bash
+a-inf ingest paper-xx --print-prompt
+```
 
-This repo intentionally includes only Codex-relevant history ingest. The only local agent history source is `~/.codex/`.
-
-## Core Workflow
-
-Every ingest follows the same pattern:
-
-1. **Ingest**: Read source material directly from files, URLs, exports, raw notes, or Codex history.
-2. **Extract**: Pull out concepts, entities, claims, decisions, procedures, and open questions.
-3. **Resolve**: Merge into existing wiki pages when possible; create new pages only for genuinely new knowledge.
-4. **Connect**: Add `[[wikilinks]]`, update the manifest, refresh the index, log the operation, and update `hot.md`.
-
-The result is a compiled knowledge base, not a transcript archive.
-
-## Vault Structure
+## What `a-inf init` Creates
 
 ```text
-$OBSIDIAN_VAULT_PATH/
+repo/
+├── .a-inf/
+│   └── config.toml
+├── .env
+├── .gitignore
+├── .manifest.json
+├── AGENTS.md
 ├── index.md
 ├── log.md
 ├── hot.md
-├── .manifest.json
 ├── _meta/
-│   ├── taxonomy.md
-│   └── *.base
-├── _insights.md
+│   └── taxonomy.md
 ├── _raw/
+├── .obsidian/
+├── .skills/                 # symlinks to bundled workflow skills
 ├── concepts/
 ├── entities/
 ├── skills/
@@ -91,104 +56,103 @@ $OBSIDIAN_VAULT_PATH/
 ├── synthesis/
 ├── journal/
 └── projects/
-    └── <project-name>.md
 ```
 
-Every wiki page has frontmatter with `title`, `category`, `tags`, `sources`, `created`, and `updated`. New or updated pages should also include a short `summary:` field when the relevant skill calls for it.
+If `AGENTS.md` already exists, `a-inf init` appends a small marked `a-inf` section instead of replacing the file. Pass `--no-agents` to skip that. Pass `--no-gitignore` to leave `.gitignore` untouched.
+
+## Commands
+
+| Command | Workflow |
+|---|---|
+| `a-inf init [path]` | Initialize a repo as a vault |
+| `a-inf ingest <source...>` | Ingest documents or staged content |
+| `a-inf ingest <url>` | Route URL ingest to `ingest-url` |
+| `a-inf query <question>` | Answer from the compiled vault |
+| `a-inf status` | Show ingest state and deltas |
+| `a-inf update` | Sync current project knowledge into the vault |
+| `a-inf history` | Mine local Codex history from `~/.codex` |
+| `a-inf lint` | Audit links, metadata, stale pages, and orphans |
+| `a-inf rebuild` | Archive, rebuild, or restore |
+| `a-inf export` | Export the graph |
+| `a-inf research <topic>` | Research and file a topic |
+| `a-inf capture` | Capture the current conversation |
+| `a-inf synthesize` | Find synthesis gaps |
+| `a-inf dashboard` | Create Obsidian Bases dashboards |
+| `a-inf colorize` | Configure graph colors |
+| `a-inf cross-link` | Add missing wikilinks |
+| `a-inf tags` | Normalize tag taxonomy |
+| `a-inf skill <name> ...` | Dispatch any bundled skill by name |
+
+## Codex Dispatch
+
+Command dispatch is intentionally thin during this migration. For example:
+
+```bash
+a-inf ingest paper-xx
+```
+
+maps to `wiki-ingest`, constructs a prompt with the vault path, selected skill file, and CLI arguments, then runs:
+
+```bash
+codex exec "<generated prompt>"
+```
+
+Commands that can be fully deterministic should move into Python over time. Commands that require synthesis can keep using Codex behind the CLI.
+
+## Configuration
+
+`a-inf init` writes `.a-inf/config.toml`:
+
+```toml
+vault_path = "/absolute/path/to/repo"
+skills_source = "/absolute/path/to/a-inf/.skills"
+link_format = "wikilink"
+```
+
+It also writes a minimal `.env` when one does not already exist, because some skills still read legacy env config during the migration. `.a-inf/config.toml` is the CLI-native config.
+
+Optional environment variables from `.env.example` still apply for skill workflows, including:
+
+- `OBSIDIAN_SOURCES_DIR`
+- `CODEX_HISTORY_PATH`
+- `OBSIDIAN_LINK_FORMAT`
+- `OBSIDIAN_RAW_DIR`
+- `QMD_WIKI_COLLECTION`
+- `QMD_PAPERS_COLLECTION`
 
 ## Skills
 
-| Skill | Purpose |
-|---|---|
-| `wiki-setup` | Initialize vault structure and baseline files |
-| `wiki-ingest` | Distill documents and staged notes into wiki pages |
-| `ingest-url` | Save and distill web pages into the wiki |
-| `wiki-history-ingest` | Codex history alias/router |
-| `codex-history-ingest` | Mine `~/.codex` sessions and rollout logs |
-| `data-ingest` | Process exports, logs, transcripts, and raw text |
-| `wiki-status` | Show ingest state, deltas, and graph insights |
-| `wiki-query` | Answer questions from the compiled wiki with citations |
-| `wiki-update` | Sync current project knowledge into the vault |
-| `wiki-lint` | Find broken links, missing metadata, stale pages, and orphaned notes |
-| `wiki-rebuild` | Archive, rebuild, or restore the wiki |
-| `cross-linker` | Add missing wikilinks between existing pages |
-| `tag-taxonomy` | Maintain controlled tag vocabulary |
-| `graph-colorize` | Configure Obsidian graph colors |
-| `wiki-export` | Export the wiki graph to JSON, GraphML, Cypher, and HTML |
-| `wiki-dashboard` | Create Obsidian Bases dashboard views |
-| `wiki-capture` | Save the current conversation as a wiki note |
-| `wiki-research` | Research a topic and file the results |
-| `wiki-synthesize` | Find and fill synthesis gaps across the wiki |
-| `llm-wiki` | Architecture reference for the wiki pattern |
-
-## Codex History Ingest
-
-`codex-history-ingest` reads Codex artifacts under `CODEX_HISTORY_PATH`, defaulting to `~/.codex`:
+The bundled skills remain the source of truth for language-model workflows:
 
 ```text
-~/.codex/
-├── sessions/
-│   └── YYYY/MM/DD/rollout-*.jsonl
-├── archived_sessions/
-├── session_index.jsonl
-├── history.jsonl
-└── config.toml
+.skills/
+├── codex-history-ingest/
+├── cross-linker/
+├── data-ingest/
+├── graph-colorize/
+├── ingest-url/
+├── llm-wiki/
+├── tag-taxonomy/
+├── wiki-capture/
+├── wiki-dashboard/
+├── wiki-export/
+├── wiki-history-ingest/
+├── wiki-ingest/
+├── wiki-lint/
+├── wiki-query/
+├── wiki-rebuild/
+├── wiki-research/
+├── wiki-setup/
+├── wiki-status/
+├── wiki-synthesize/
+└── wiki-update/
 ```
 
-It uses append mode by default, comparing each source file against `.manifest.json` and processing only new or modified history. It distills durable knowledge from sessions while filtering tool plumbing, telemetry, injected prompts, and sensitive data.
+## Direction
 
-## Optional QMD Search
+The target architecture is CLI-first:
 
-The skills work with regular filesystem search by default. If you use [QMD](https://github.com/tobi/qmd), set these optional collections in `.env`:
-
-```env
-QMD_WIKI_COLLECTION=wiki
-QMD_PAPERS_COLLECTION=papers
-```
-
-`wiki-query` can use the wiki collection for semantic lookup, and `wiki-ingest` can use the papers collection to find related source material before writing.
-
-## Project Layout
-
-```text
-obsidian-wiki/
-├── AGENTS.md
-├── README.md
-├── SETUP.md
-├── .env.example
-└── .skills/
-    ├── codex-history-ingest/
-    ├── cross-linker/
-    ├── data-ingest/
-    ├── graph-colorize/
-    ├── ingest-url/
-    ├── llm-wiki/
-    ├── tag-taxonomy/
-    ├── wiki-capture/
-    ├── wiki-dashboard/
-    ├── wiki-export/
-    ├── wiki-history-ingest/
-    ├── wiki-ingest/
-    ├── wiki-lint/
-    ├── wiki-query/
-    ├── wiki-rebuild/
-    ├── wiki-research/
-    ├── wiki-setup/
-    ├── wiki-status/
-    ├── wiki-synthesize/
-    └── wiki-update/
-```
-
-## Extending
-
-Add a new workflow by creating `.skills/<skill-name>/SKILL.md` with YAML frontmatter:
-
-```yaml
----
-name: your-skill-name
-description: >
-  What this skill does and when Codex should use it.
----
-```
-
-Keep new workflows as markdown skill instructions so the repo stays skill-only.
+- `init`, config, folder creation, and symlink management live in Python.
+- Read-only status and deterministic maintenance should move into Python next.
+- High-level synthesis commands can continue to invoke Codex with the appropriate skill.
+- Skills become internal execution specs rather than the user-facing interface.

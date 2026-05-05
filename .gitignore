@@ -2,6 +2,7 @@
 .DS_Store
 *.pyc
 __pycache__/
+a_inf.egg-info/
 
 # Local Codex/Obsidian config stays out of git. The repo itself is skill-only;
 # install skills globally by symlinking `.skills/*` into `~/.codex/skills/`.

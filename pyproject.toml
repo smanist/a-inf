@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "a-inf"
+version = "0.1.0"
+description = "CLI for initializing and operating an a-inf Obsidian wiki vault."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+
+[project.scripts]
+a-inf = "a_inf.cli:main"
+
+[tool.setuptools]
+packages = ["a_inf"]

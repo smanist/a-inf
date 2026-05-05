@@ -1,17 +1,18 @@
 # Obsidian Wiki — Agent Context
 
-A **skill-based framework** for building and maintaining an Obsidian knowledge base. No scripts or dependencies — everything is markdown instructions that you execute directly.
+A **CLI-first framework** for building and maintaining an Obsidian knowledge base. The `a-inf` CLI is the user-facing interface; markdown skills in `.skills/` remain the workflow specs used directly or through Codex dispatch.
 
 ## Configuration
 
 Read config in this order (first found wins):
 
-1. **`~/.obsidian-wiki/config`** — global config, works from any project directory
-2. **`.env`** in the obsidian-wiki repo — local fallback
+1. **`.a-inf/config.toml`** — CLI-native repo-local config
+2. **`~/.obsidian-wiki/config`** — legacy global config, works from any project directory
+3. **`.env`** in the a-inf repo — legacy local fallback
 
-Both files set `OBSIDIAN_VAULT_PATH` (where the wiki lives). The global config also sets `OBSIDIAN_WIKI_REPO` (where this repo is cloned).
+`.a-inf/config.toml` sets `vault_path`, `skills_source`, and `link_format`. Legacy env files set `OBSIDIAN_VAULT_PATH`; the global config can also set `OBSIDIAN_WIKI_REPO`.
 
-**After reading config, always read `$OBSIDIAN_VAULT_PATH/AGENTS.md` if it exists.** It contains owner-specific conventions (domain vocabulary, ingest preferences, writing style, project scoping) that override framework defaults for all skills. Apply it for the duration of the session.
+After reading config, derive the vault path from `vault_path` or `OBSIDIAN_VAULT_PATH`. Always read `<vault path>/AGENTS.md` if it exists. It contains owner-specific conventions (domain vocabulary, ingest preferences, writing style, project scoping) that override framework defaults for all skills. Apply it for the duration of the session.
 
 ## Vault Structure
 
@@ -40,39 +41,37 @@ Every wiki page has required frontmatter: `title`, `category`, `tags`, `sources`
 
 ## Skill Routing
 
-Skills live in `.skills/<name>/SKILL.md`. Match the user's intent to the right skill:
+Prefer CLI commands for user-facing workflows. Skills live in `.skills/<name>/SKILL.md` and are the underlying execution specs.
 
-| User says something like… | Skill |
-|---|---|
-| "set up my wiki" / "initialize" | `wiki-setup` |
-| "/wiki-history-ingest codex" / "import my Codex history" | `wiki-history-ingest` |
-| "/ingest-url <url>" / "add this URL" / "ingest this link" / "save this page" | `ingest-url` |
-| "ingest" / "add this to the wiki" / "process these docs" | `wiki-ingest` |
-| "import my Codex history" / "mine my Codex sessions" | `codex-history-ingest` |
-| "process this export" / "ingest this data" / logs, transcripts | `data-ingest` |
-| "what's the status" / "what's been ingested" / "show the delta" | `wiki-status` |
-| "wiki insights" / "hubs" / "wiki structure" | `wiki-status` (insights mode) |
-| "what do I know about X" / "find info on Y" / any question | `wiki-query` |
-| "audit" / "lint" / "find broken links" / "wiki health" | `wiki-lint` |
-| "rebuild" / "start over" / "archive" / "restore" | `wiki-rebuild` |
-| "link my pages" / "cross-reference" / "connect my wiki" | `cross-linker` |
-| "fix my tags" / "normalize tags" / "tag audit" | `tag-taxonomy` |
-| "update wiki" / "sync to wiki" / "save this to my wiki" | `wiki-update` |
-| "export wiki" / "export graph" / "graphml" / "neo4j" | `wiki-export` |
-| "color my graph" / "color code obsidian" / "color by tag/category/visibility" | `graph-colorize` |
-| "save this" / "/wiki-capture" / "capture this" / "file this conversation" | `wiki-capture` |
-| "/wiki-research [topic]" / "research X" / "find everything about Y" | `wiki-research` |
-| "create a dashboard" / "vault dashboard" / "show all X as a table" / "dynamic view" | `wiki-dashboard` |
-| "synthesize my wiki" / "find connections" / "what concepts keep coming up together" / "/wiki-synthesize" | `wiki-synthesize` |
-| "create a new skill" | Use Codex's built-in skill creation workflow |
+| User says something like… | CLI | Skill |
+|---|---|---|
+| "set up my wiki" / "initialize" | `a-inf init` | `wiki-setup` |
+| "import my Codex history" | `a-inf history` | `codex-history-ingest` |
+| "add this URL" / "ingest this link" | `a-inf ingest <url>` | `ingest-url` |
+| "ingest" / "process these docs" | `a-inf ingest <source>` | `wiki-ingest` |
+| "process this export" / logs, transcripts | `a-inf ingest --data <source>` | `data-ingest` |
+| "what's the status" / "show the delta" | `a-inf status` | `wiki-status` |
+| "wiki insights" / "hubs" / "wiki structure" | `a-inf status` | `wiki-status` |
+| "what do I know about X" / any question | `a-inf query "X"` | `wiki-query` |
+| "audit" / "lint" / "find broken links" | `a-inf lint` | `wiki-lint` |
+| "rebuild" / "archive" / "restore" | `a-inf rebuild` | `wiki-rebuild` |
+| "link my pages" / "cross-reference" | `a-inf cross-link` | `cross-linker` |
+| "fix my tags" / "normalize tags" | `a-inf tags` | `tag-taxonomy` |
+| "update wiki" / "sync to wiki" | `a-inf update` | `wiki-update` |
+| "export wiki" / "export graph" | `a-inf export` | `wiki-export` |
+| "color my graph" | `a-inf colorize` | `graph-colorize` |
+| "save this" / "capture this" | `a-inf capture` | `wiki-capture` |
+| "research X" | `a-inf research X` | `wiki-research` |
+| "create a dashboard" | `a-inf dashboard` | `wiki-dashboard` |
+| "synthesize my wiki" | `a-inf synthesize` | `wiki-synthesize` |
 
 ## Cross-Project Usage
 
-The main use case: you're working in some other project and want to sync knowledge into your wiki or query it. Two global skills handle this — `wiki-update` and `wiki-query`. They work from any directory.
+The main use case: you're working in a repository initialized with `a-inf init` and want to sync knowledge into the vault or query it. The CLI handles command routing; skills define the underlying behavior.
 
 ### wiki-update (write to wiki)
 
-1. Read `~/.obsidian-wiki/config` to get `OBSIDIAN_VAULT_PATH`
+1. Read `.a-inf/config.toml`, falling back to `~/.obsidian-wiki/config` or `.env`, to get the vault path
 2. Scan the current project: README, source structure, git log, package metadata
 3. Distill what's worth remembering (architecture decisions, patterns, trade-offs — not code listings)
 4. Write to `$VAULT/projects/<project-name>.md`, cross-linking to concept/entity pages as needed
@@ -82,7 +81,7 @@ On repeat runs, it checks `last_commit_synced` in `.manifest.json` and only proc
 
 ### wiki-query (read from wiki)
 
-1. Read `~/.obsidian-wiki/config` to get `OBSIDIAN_VAULT_PATH`
+1. Read `.a-inf/config.toml`, falling back to `~/.obsidian-wiki/config` or `.env`, to get the vault path
 2. Scan titles, tags, and `summary:` frontmatter fields first (cheap pass)
 3. Only open page bodies when the index pass can't answer
 4. Return a synthesized answer with `[[wikilink]]` citations
