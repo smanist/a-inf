@@ -401,4 +401,3 @@ For details on specific operations, see the companion skills:
 - **data-ingest** — Ingest any raw text data
 - **wiki-query** — Answer questions against the wiki
 - **wiki-lint** — Audit and maintain wiki health
-- **wiki-setup** — Initialize a new vault

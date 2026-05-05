@@ -43,9 +43,9 @@ Every wiki page has required frontmatter: `title`, `category`, `tags`, `sources`
 
 Prefer CLI commands for user-facing workflows. Skills live in `.skills/<name>/SKILL.md` and are the underlying execution specs.
 
-| User says something like… | CLI | Skill |
+| User says something like… | CLI | Execution |
 |---|---|---|
-| "set up my wiki" / "initialize" | `a-inf init` | `wiki-setup` |
+| "set up my wiki" / "initialize" | `a-inf init` | deterministic CLI |
 | "import my Codex history" | `a-inf history` | `codex-history-ingest` |
 | "add this URL" / "ingest this link" | `a-inf ingest <url>` | `ingest-url` |
 | "ingest" / "process these docs" | `a-inf ingest <source>` | `wiki-ingest` |

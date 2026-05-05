@@ -276,6 +276,8 @@ def resolve_skills_source(explicit: Path | None) -> Path:
 def install_skills(source: Path, dest: Path, copy: bool = False) -> int:
     count = 0
     for skill_dir in sorted(path for path in source.iterdir() if path.is_dir()):
+        if not (skill_dir / "SKILL.md").is_file():
+            continue
         target = dest / skill_dir.name
         if target.exists() or target.is_symlink():
             if target.resolve() == skill_dir.resolve():

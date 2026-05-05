@@ -142,7 +142,6 @@ The bundled skills remain the source of truth for language-model workflows:
 ├── wiki-query/
 ├── wiki-rebuild/
 ├── wiki-research/
-├── wiki-setup/
 ├── wiki-status/
 ├── wiki-synthesize/
 └── wiki-update/
@@ -153,6 +152,7 @@ The bundled skills remain the source of truth for language-model workflows:
 The target architecture is CLI-first:
 
 - `init`, config, folder creation, and symlink management live in Python.
+- There is no setup skill; initialization is deterministic CLI execution.
 - Read-only status and deterministic maintenance should move into Python next.
 - High-level synthesis commands can continue to invoke Codex with the appropriate skill.
 - Skills become internal execution specs rather than the user-facing interface.
