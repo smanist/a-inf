@@ -2,7 +2,7 @@
 name: data-ingest
 description: >
   Ingest any raw text data, conversation logs, chat exports, or unstructured documents into the Obsidian wiki.
-  Use this skill when the user wants to process data that isn't standard documents or Claude history —
+  Use this skill when the user wants to process data that isn't standard documents or Codex history —
   things like ChatGPT exports, Slack threads, Discord logs, meeting transcripts, journal entries, CSV data,
   browser bookmarks, email archives, or any raw text dump. Triggers on "ingest this data", "process these logs",
   "add this export to the wiki", "import my chat history from X". This is the catch-all for any text source

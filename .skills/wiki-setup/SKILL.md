@@ -24,9 +24,9 @@ If `.env` doesn't exist, create it from `.env.example`. Ask the user for:
    - Can be multiple paths, comma-separated
    - Default: `~/Documents`
 
-3. **Want to import Claude history?** → `CLAUDE_HISTORY_PATH`
-   - Default: auto-discovers from `~/.claude`
-   - Set explicitly if Claude data is elsewhere
+3. **Want to import Codex history?** -> `CODEX_HISTORY_PATH`
+   - Default: `~/.codex`
+   - Set explicitly if Codex data is elsewhere
 
 4. **Have QMD installed?** → `QMD_WIKI_COLLECTION` / `QMD_PAPERS_COLLECTION`
    - Optional. Enables semantic search in `wiki-query` and source discovery in `wiki-ingest`.
@@ -158,6 +158,5 @@ Report the results and tell the user they can now:
 1. Open the vault in Obsidian (File → Open Vault → select the directory)
 2. Run `wiki-status` to see what's available to ingest
 3. Run `wiki-ingest` to add their first sources
-4. Run `claude-history-ingest` to mine their Claude conversations
-5. Run `codex-history-ingest` to mine their Codex sessions (if they use Codex)
-6. Run `wiki-status` again anytime to check the delta
+4. Run `codex-history-ingest` to mine their Codex sessions
+5. Run `wiki-status` again anytime to check the delta

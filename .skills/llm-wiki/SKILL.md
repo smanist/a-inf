@@ -89,7 +89,7 @@ Each project directory has an overview page structured like this:
 title: My Project
 category: project
 tags: [ai, web, backend]
-source_path: ~/.claude/projects/-Users-name-Documents-projects-my-project
+source_path: ~/.codex/sessions/2026/04/06
 created: 2026-03-01T00:00:00Z
 updated: 2026-04-06T00:00:00Z
 ---
@@ -374,7 +374,7 @@ The wiki is configured through environment variables (see `.env.example`). The o
 - `OBSIDIAN_VAULT_PATH` — Where the wiki lives **(required)**
 - `OBSIDIAN_SOURCES_DIR` — Where raw source documents are
 - `OBSIDIAN_CATEGORIES` — Comma-separated list of categories
-- `CLAUDE_HISTORY_PATH` — Where to find Claude conversation data
+- `CODEX_HISTORY_PATH` — Where to find Codex session data
 - `OBSIDIAN_LINK_FORMAT` — Internal link syntax: `wikilink` (default) or `markdown`
 
 No API keys are needed — the agent running these skills already has LLM access built in.
@@ -397,7 +397,6 @@ For details on specific operations, see the companion skills:
 - **wiki-status** — Audit what's ingested, compute delta, recommend append vs rebuild
 - **wiki-rebuild** — Archive current wiki, rebuild from scratch, or restore from archive
 - **wiki-ingest** — Distill source documents into wiki pages
-- **claude-history-ingest** — Ingest Claude conversation history
 - **codex-history-ingest** — Ingest Codex CLI session history
 - **data-ingest** — Ingest any raw text data
 - **wiki-query** — Answer questions against the wiki

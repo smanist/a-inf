@@ -57,7 +57,7 @@ If the content clearly belongs to a specific project (detected from context or u
 
 Do **not** write a summary of the conversation. Write the knowledge itself, in declarative present tense:
 
-- Not: "The user asked about X and Claude explained that..."
+- Not: "The user asked about X and Codex explained that..."
 - Yes: "X works by..."
 - Not: "We decided to use Y because..."
 - Yes: "Y is preferred over Z because [reason]. [^[inferred] if the rationale was implied, not stated explicitly]"

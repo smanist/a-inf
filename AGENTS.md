@@ -45,13 +45,10 @@ Skills live in `.skills/<name>/SKILL.md`. Match the user's intent to the right s
 | User says something like… | Skill |
 |---|---|
 | "set up my wiki" / "initialize" | `wiki-setup` |
-| "/wiki-history-ingest claude" / "/wiki-history-ingest codex" / "/wiki-history-ingest hermes" | `wiki-history-ingest` |
+| "/wiki-history-ingest codex" / "import my Codex history" | `wiki-history-ingest` |
 | "/ingest-url <url>" / "add this URL" / "ingest this link" / "save this page" | `ingest-url` |
 | "ingest" / "add this to the wiki" / "process these docs" | `wiki-ingest` |
-| "import my Claude history" / "mine my conversations" | `claude-history-ingest` |
 | "import my Codex history" / "mine my Codex sessions" | `codex-history-ingest` |
-| "import my Hermes history" / "mine my Hermes memories" / "ingest ~/.hermes" | `hermes-history-ingest` |
-| "import my OpenClaw history" / "mine my OpenClaw sessions" / "ingest ~/.openclaw" | `openclaw-history-ingest` |
 | "process this export" / "ingest this data" / logs, transcripts | `data-ingest` |
 | "what's the status" / "what's been ingested" / "show the delta" | `wiki-status` |
 | "wiki insights" / "hubs" / "wiki structure" | `wiki-status` (insights mode) |
@@ -67,7 +64,7 @@ Skills live in `.skills/<name>/SKILL.md`. Match the user's intent to the right s
 | "/wiki-research [topic]" / "research X" / "find everything about Y" | `wiki-research` |
 | "create a dashboard" / "vault dashboard" / "show all X as a table" / "dynamic view" | `wiki-dashboard` |
 | "synthesize my wiki" / "find connections" / "what concepts keep coming up together" / "/wiki-synthesize" | `wiki-synthesize` |
-| "create a new skill" | `skill-creator` |
+| "create a new skill" | Use Codex's built-in skill creation workflow |
 
 ## Cross-Project Usage
 

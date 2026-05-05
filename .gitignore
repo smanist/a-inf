@@ -3,6 +3,5 @@
 *.pyc
 __pycache__/
 
-# Agent skill symlinks (created by setup.sh) — these are just pointers to .skills/
-# We track them so cloners get the symlinks too, but if your git doesn't
-# preserve symlinks, run `bash setup.sh` after cloning.
+# Local Codex/Obsidian config stays out of git. The repo itself is skill-only;
+# install skills globally by symlinking `.skills/*` into `~/.codex/skills/`.

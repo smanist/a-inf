@@ -17,7 +17,7 @@ You are distilling knowledge from the current project into the user's Obsidian w
    - `OBSIDIAN_VAULT_PATH` — where the wiki lives
    - `OBSIDIAN_WIKI_REPO` — where the obsidian-wiki repo is cloned (for reading other skills if needed)
    - `OBSIDIAN_LINK_FORMAT` — `wikilink` (default) or `markdown`
-2. If `~/.obsidian-wiki/config` doesn't exist, tell the user to run `bash setup.sh` from their obsidian-wiki repo first.
+2. If `~/.obsidian-wiki/config` doesn't exist, tell the user to create it or set `OBSIDIAN_VAULT_PATH` in this repo's `.env`.
 3. Read `$OBSIDIAN_VAULT_PATH/.manifest.json` to check if this project has been synced before.
 4. Read `$OBSIDIAN_VAULT_PATH/index.md` to know what the wiki already contains.
 
@@ -31,7 +31,7 @@ Figure out what this project is by scanning the current working directory:
 - Source structure (frameworks, languages, key abstractions)
 - `package.json`, `pyproject.toml`, `go.mod`, `Cargo.toml` or whatever defines the project
 - Git log (focus on commit messages that signal decisions, not "fix typo" stuff)
-- Claude memory files if they exist (`.claude/` in the project)
+- Codex-related project context if it exists (`.codex/` in the project)
 
 Derive a clean project name from the directory name.
 

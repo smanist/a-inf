@@ -16,7 +16,7 @@ You are computing the current state of the wiki: what's been ingested, what's ne
 
 ## Before You Start
 
-1. Read `.env` to get `OBSIDIAN_VAULT_PATH`, `OBSIDIAN_SOURCES_DIR`, `CLAUDE_HISTORY_PATH`, `CODEX_HISTORY_PATH`
+1. Read `.env` to get `OBSIDIAN_VAULT_PATH`, `OBSIDIAN_SOURCES_DIR`, and `CODEX_HISTORY_PATH`
 2. Read `.manifest.json` at the vault root — this is the ingest tracking ledger
 
 ## The Manifest
@@ -37,11 +37,11 @@ The manifest lives at `$OBSIDIAN_VAULT_PATH/.manifest.json`. It tracks every sou
       "pages_created": ["concepts/transformers.md"],
       "pages_updated": ["entities/vaswani.md"]
     },
-    "~/.claude/projects/-Users-name-my-app/abc123.jsonl": {
+    "~/.codex/sessions/2026/04/06/rollout-abc123.jsonl": {
       "ingested_at": "2026-04-06T11:00:00Z",
       "size_bytes": 128000,
       "modified_at": "2026-04-06T09:00:00Z",
-      "source_type": "claude_conversation",
+      "source_type": "codex_rollout",
       "project": "my-app",
       "pages_created": ["entities/my-app.md"],
       "pages_updated": ["skills/react-debugging.md"]
@@ -49,12 +49,12 @@ The manifest lives at `$OBSIDIAN_VAULT_PATH/.manifest.json`. It tracks every sou
   },
   "projects": {
     "my-app": {
-      "source_path": "~/.claude/projects/-Users-name-my-app",
+      "source_path": "~/.codex/sessions/2026/04/06",
       "vault_path": "projects/my-app",
       "last_ingested": "2026-04-06T11:00:00Z",
-      "conversations_ingested": 5,
-      "conversations_total": 8,
-      "memory_files_ingested": 3
+      "sessions_ingested": 5,
+      "sessions_total": 8,
+      "index_updated_at": "2026-04-06T09:30:00Z"
     }
   },
   "stats": {
@@ -74,14 +74,6 @@ Build an inventory of everything available to ingest right now:
 ```
 Glob each directory in OBSIDIAN_SOURCES_DIR for all text files
 Record: path, size, modification time
-```
-
-### Claude History (from `CLAUDE_HISTORY_PATH`)
-```
-Glob: ~/.claude/projects/*/          → project directories
-Glob: ~/.claude/projects/*/*.jsonl   → conversation files
-Glob: ~/.claude/projects/*/memory/*.md → memory files
-Record: path, size, modification time, parent project
 ```
 
 ### Codex History (from `CODEX_HISTORY_PATH`)
@@ -109,11 +101,6 @@ Compare current sources against the manifest. Classify each source file:
 | **Deleted** | In manifest, but file no longer exists on disk | Note it — wiki pages may be stale |
 
 When a manifest entry has no `content_hash` (older entry), fall back to mtime comparison only.
-
-For Claude history specifically, also compute:
-- New projects (directories in `~/.claude/projects/` not in manifest)
-- New conversations within existing projects
-- Updated memory files
 
 For Codex history specifically, also compute:
 - New rollout files under `sessions/**`
@@ -147,7 +134,6 @@ Present a clear summary:
 | Source | Type | Size |
 |---|---|---|
 | ~/Documents/research/new-paper.pdf | document | 2.1 MB |
-| ~/.claude/projects/-Users-.../session-xyz.jsonl | claude_conversation | 340 KB |
 | ~/.codex/sessions/2026/04/12/rollout-...jsonl | codex_rollout | 220 KB |
 | ... | | |
 
@@ -158,8 +144,8 @@ Present a clear summary:
 | ... | | | |
 
 ### New projects (not yet in wiki): 2
-- **tractorex** (3 conversations, 2 memory files)
-- **papertech** (1 conversation, 0 memory files)
+- **tractorex** (3 Codex rollouts)
+- **papertech** (1 Codex rollout)
 
 ### Deleted sources (ingested but gone): 0
 
@@ -315,5 +301,5 @@ After writing the file, append to `log.md`:
 
 - If the manifest doesn't exist, report everything as "new" and recommend a full ingest
 - This skill only reads and reports — it doesn't modify anything (except writing `_insights.md` in insights mode, which is regenerable)
-- The actual ingest work is done by the ingest skills (`wiki-ingest`, `claude-history-ingest`, `codex-history-ingest`, `data-ingest`)
+- The actual ingest work is done by the ingest skills (`wiki-ingest`, `codex-history-ingest`, `data-ingest`)
 - Those skills are responsible for updating the manifest after they finish
