@@ -274,6 +274,11 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             from a_inf.ingest import run_hybrid_ingest
 
             return run_hybrid_ingest(args, find_vault_root(Path.cwd()))
+    elif alias == "query":
+        from a_inf.query import run_query
+
+        vault = find_vault_root(Path.cwd())
+        return run_query(args, vault, load_wiki_config(vault))
     else:
         skill = SKILL_ALIASES[alias]
     dispatch = build_dispatch(skill, args.args)

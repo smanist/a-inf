@@ -12,7 +12,7 @@ npm install -g @tobilu/qmd
 npm install -g defuddle
 ```
 
-This exposes the `a-inf` command from the current checkout. `qmd` is a required runtime CLI dependency for `a-inf ingest`; `defuddle` is required for URL ingest via `a-inf ingest <url>`. `mineru` is optional for PDF extraction. `a-inf` keeps QMD's writable SQLite/sqlite-vec index and collection config under `.a-inf/qmd/`.
+This exposes the `a-inf` command from the current checkout. `qmd` is a required runtime CLI dependency for initialization, ingest, and query; `defuddle` is required for URL ingest via `a-inf ingest <url>`. `mineru` is optional for PDF extraction. `a-inf` keeps QMD's writable SQLite/sqlite-vec index and collection config under `.a-inf/qmd/`.
 
 ## Quick Start
 
@@ -28,7 +28,7 @@ a-inf query "what do I know about rate limiting?"
 
 `a-inf init` is local and deterministic. It creates the vault folders, seed files, `.a-inf/config.toml`, a compatibility `.env`, Obsidian config, `.gitignore` entries for local config, and local Codex skill symlinks under `.agents/skills/`. New `.env` files default `QMD_WIKI_COLLECTION` and `QMD_PAPERS_COLLECTION` to the repo directory name, and init creates the matching QMD collection.
 
-`a-inf ingest` now runs a hybrid deterministic engine: Python selects sources, extracts URL content with `defuddle`, optionally extracts PDF markdown with MinerU, computes hashes, asks Codex for a JSON ingest plan, validates the whole plan, and only then writes wiki files. After successful write workflows, the CLI refreshes QMD with `qmd update` and `qmd embed`. Other synthesis-heavy commands still dispatch to Codex with the matching skill. Use `--print-prompt` to inspect the generated ingest packet or dispatch prompt instead:
+`a-inf ingest` now runs a hybrid deterministic engine: Python selects sources, extracts URL content with `defuddle`, optionally extracts PDF markdown with MinerU, computes hashes, asks Codex for a JSON ingest plan, validates the whole plan, and only then writes wiki files. `a-inf query` also starts deterministically: Python builds a QMD-backed retrieval packet, then asks Codex only to synthesize the final cited answer. After successful write workflows, the CLI refreshes QMD with `qmd update` and `qmd embed`. Other synthesis-heavy commands still dispatch to Codex with the matching skill. Use `--print-prompt` to inspect the generated ingest packet, query packet, or dispatch prompt instead:
 
 ```bash
 a-inf ingest paper-xx --print-prompt
