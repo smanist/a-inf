@@ -1,169 +1,153 @@
 ---
 name: wiki-synthesize
 description: >
-  Systematically discover synthesis opportunities across the Obsidian wiki — pairs or clusters of
-  concepts that co-occur frequently across pages but have no synthesis page connecting them. Creates
-  new synthesis/ pages that draw explicit cross-cutting conclusions. Use when the user says "synthesize
-  my wiki", "find connections", "what concepts keep coming up together", "/wiki-synthesize", or after
-  a large ingest when the vault has grown significantly.
+  Semantic authoring layer for `a-inf synthesize`. The CLI deterministically discovers synthesis
+  opportunities, builds an authoring packet, validates the returned JSON plan, and applies wiki edits.
+  Use when the user says "synthesize my wiki", "find connections", "what concepts keep coming up
+  together", "/wiki-synthesize", or after a large ingest when the vault has grown significantly.
 ---
 
-# Wiki Synthesize — First-Class Synthesis Discovery
+# Wiki Synthesize - Semantic Authoring
 
-You are scanning the wiki for concepts that co-occur across many pages but have no dedicated synthesis page connecting them. Your job is to surface these gaps and fill the most valuable ones with cross-cutting synthesis pages.
+`a-inf synthesize` is packet-first:
 
-## Before You Start
+1. Python builds a deterministic synthesis packet from lint synthesis-gap candidates.
+2. Codex reads that packet and this skill.
+3. Codex writes a separate `synthesis_plan.json`.
+4. The CLI validates the plan, creates synthesis pages, adds backlinks, rebuilds `index.md`, updates
+   `hot.md`, appends `log.md`, updates manifest stats, and syncs QMD.
 
-1. Read `~/.obsidian-wiki/config` (preferred) or `.env` (fallback) to get `OBSIDIAN_VAULT_PATH` and `OBSIDIAN_LINK_FORMAT` (default: `wikilink`).
-2. Read `index.md` to get the full page inventory.
-3. Read `hot.md` if it exists — it surfaces recent activity and active threads that may already point to synthesis opportunities.
-4. Read `_meta/taxonomy.md` to understand the tag vocabulary.
+Do **not** edit wiki files, create markdown files, update frontmatter, add backlinks, append logs,
+or mutate the deterministic packet. The CLI owns all filesystem changes.
 
-When writing internal links in synthesis pages, apply the link format from `llm-wiki/SKILL.md` (Link Format section) using the `OBSIDIAN_LINK_FORMAT` value.
+## Inputs
 
-## Step 1: Build the Co-occurrence Map
+The CLI prompt includes:
 
-Scan every non-special page in the vault (skip `index.md`, `log.md`, `hot.md`, `_insights.md`, `_meta/*`, `_archives/*`, `_raw/*`).
+- `Vault path`
+- `Deterministic packet path`
+- `Write synthesis plan JSON to`
 
-For each page, collect:
-- All `[[wikilinks]]` it contains (outgoing links)
-- Its `tags` frontmatter
-- Its `category` frontmatter
+Read the deterministic packet first. Important fields:
 
-Build a co-occurrence matrix: for every pair of concept/entity pages (A, B), count how many other pages link to **both** A and B. This is their co-occurrence score.
+- `candidates` - up to 5 synthesis opportunities selected for authoring.
+- `opportunities` - skipped-but-interesting candidates for visibility only.
+- `authoring_context` - bounded excerpts, summaries, tags, confidence, and Related sections for
+  candidate pages and evidence pages.
+- `existing_synthesis_pages` - nearby synthesis pages already present in the vault.
+- `page_registry`, `graph`, `index_summary`, `hot`, `taxonomy`, and `agents` - supporting context.
 
-You don't need to be exhaustive — aim for the top 20-30 pairs by co-occurrence score. Use Grep to find backlinks efficiently:
+Treat the packet as the source of truth for candidate IDs, page paths, titles, evidence pages,
+link format, and deterministic target paths. Do not invent candidates outside the packet.
 
-```bash
-grep -rl "\[\[ConceptA\]\]" "$OBSIDIAN_VAULT_PATH" --include="*.md"
-```
+## Review Tasks
 
-Run this for your top candidate concepts and intersect the result sets.
+For each item in `candidates`, choose `create` or `skip`.
 
-## Step 2: Filter Out Already-Synthesized Pairs
+Create only when:
 
-Check the `synthesis/` directory for existing pages. For each existing synthesis page:
-- Read its `sources` frontmatter or its body for `[[wikilinks]]`
-- Mark those concept pairs as already covered
+- The pair has a real conceptual relationship, not just incidental co-occurrence.
+- A synthesis page would add a cross-cutting insight, tension, decision frame, or reusable pattern.
+- Existing synthesis pages do not already capture the relationship.
+- The packet provides enough evidence to write without fabricating.
 
-Remove covered pairs from your candidate list.
+Skip when:
 
-## Step 3: Score and Rank Candidates
+- The pair merely shares a tag, project, or list of links.
+- Existing pages already explain the relationship well.
+- The evidence is too thin or ambiguous.
+- The better action is fixlinking, tag cleanup, research, or re-ingest.
 
-For each remaining candidate pair (or cluster of 3+), assign a synthesis value score:
+## Writing Guidance
 
-| Signal | Points |
-|---|---|
-| Co-occurrence count ≥ 5 | +3 |
-| Co-occurrence count 3-4 | +2 |
-| Co-occurrence count 1-2 | +1 |
-| Concepts are in different categories (cross-domain) | +2 |
-| Concepts share tags but live in different folders | +1 |
-| One or both concepts are tagged as hubs in `_insights.md` | +1 |
-| A synthesis would resolve a flagged contradiction | +2 |
+For `create`, write only the `summary`, markdown `body`, optional `open_questions`, and optional
+`note`. The CLI will generate title, path, frontmatter, sources, provenance, confidence, lifecycle,
+Related backlinks, special-file updates, and QMD sync.
 
-Pick the top 5 candidates. If the user asked for a specific topic ("synthesize everything about observability"), filter candidates to that domain first.
-
-## Step 4: Draft Synthesis Pages
-
-For each top candidate, create a page in `synthesis/` using this template:
+The body should be useful as a final synthesis page body. Prefer this structure unless the packet
+strongly suggests a better one:
 
 ```markdown
----
-title: <Concept A> × <Concept B>
-category: synthesis
-tags: [<shared tags>, <domain tags>]
-sources: [<all pages that link to both>]
-created: TIMESTAMP
-updated: TIMESTAMP
-summary: "Cross-cutting synthesis of how <A> and <B> interact, with implications for <domain>."
-provenance:
-  extracted: 0.2
-  inferred: 0.7
-  ambiguous: 0.1
-base_confidence: <min(base_confidence of all input pages)>
-lifecycle: draft
-lifecycle_changed: TIMESTAMP_DATE
----
-
-# <Concept A> × <Concept B>
-
 ## The Connection
 
-*What makes these two concepts worth synthesizing together — the non-obvious relationship that pages about each individually don't capture.*
+What makes these two concepts worth synthesizing together.
 
 ## Where They Co-occur
 
-*The pages and contexts where both appear. What situations bring them together.*
+The pages and contexts where both appear, grounded in packet evidence.
 
 ## Cross-cutting Insight
 
-*The conclusion that only becomes visible when you look at both together. This is the point of the page — the thing you couldn't see from either concept page alone.*
+The conclusion visible only when the concepts are considered together. Mark synthesized claims with
+^[inferred].
 
 ## Tensions and Trade-offs
 
-*Where the two concepts pull in opposite directions. Unresolved contradictions. Cases where applying one undermines the other.*
+Where the concepts pull in different directions, including unresolved contradictions or scope limits.
+Mark uncertain claims with ^[ambiguous].
 
 ## Open Questions
 
-*What this synthesis surfaces that the wiki doesn't yet have an answer for. Good candidates for future research.*
-
-## Related
-
-- [[<Concept A>]]
-- [[<Concept B>]]
-- [[<other related pages>]]
+Questions surfaced by the synthesis.
 ```
 
-**Synthesis pages are mostly `^[inferred]`.** You are drawing connections across sources — that's synthesis by definition. Apply `^[inferred]` to cross-cutting conclusions and `^[ambiguous]` where sources disagree.
+The CLI adds a top-level heading if missing and appends a Related section if missing. You may include
+those sections yourself when useful, but do not include frontmatter.
 
-**The title format is `A × B`** — this signals to readers that it's a synthesis page, not a page about either concept alone.
+## Output Contract
 
-## Step 5: Back-link from Source Pages
+Write exactly one JSON object to the path named by `Write synthesis plan JSON to`. Do not print
+Markdown and do not edit any wiki files.
 
-For each synthesis page you created, add a link to it from the two (or more) concept pages it synthesizes. In the concept page, add to its `## Related` section:
+Required shape:
 
-```markdown
-- [[Concept A × Concept B]] — synthesis
+```json
+{
+  "version": 1,
+  "status": "completed",
+  "decisions": [],
+  "hot_update": {
+    "recent_activity": [],
+    "active_threads": []
+  },
+  "warnings": []
+}
 ```
 
-If the concept page has no `## Related` section, add one at the bottom.
+Each `create` decision must use this shape:
 
-## Step 6: Report Synthesis Opportunities Not Taken
-
-After creating pages for the top 5, list the next 10 candidates in your output — pairs that scored well but you didn't write pages for. This gives the user visibility into what the wiki thinks is worth exploring without forcing every synthesis in one run.
-
-Format:
-```
-Skipped (consider next time):
-- [[Caching]] × [[Consistency]] — co-occurs in 4 pages, cross-domain
-- [[Testing]] × [[Observability]] — co-occurs in 3 pages, shares tags
-...
-```
-
-## Step 7: Update Special Files
-
-**`index.md`** — Add entries for all new synthesis pages.
-
-**`log.md`** — Append:
-```
-- [TIMESTAMP] WIKI_SYNTHESIZE pages_scanned=N synthesis_created=M candidates_skipped=K
+```json
+{
+  "candidate_id": "synthesis-gap-1",
+  "action": "create",
+  "summary": "Under 200 characters.",
+  "body": "## The Connection\n\n...",
+  "open_questions": ["Question surfaced by the synthesis."],
+  "note": "Optional concise rationale."
+}
 ```
 
-**`hot.md`** — Read `$OBSIDIAN_VAULT_PATH/hot.md` (create from the template in `wiki-ingest` if missing). Update **Recent Activity** with what was synthesized — e.g. "Synthesized 5 cross-cutting pages: Caching × Consistency, Testing × Observability, …". Update **Active Threads** with any open questions the synthesis surfaced. Update `updated` timestamp.
+Each `skip` decision must use this shape:
 
-## Quality Checklist
+```json
+{
+  "candidate_id": "synthesis-gap-2",
+  "action": "skip",
+  "note": "Existing pages already cover the relationship."
+}
+```
 
-- [ ] Every synthesis page has a `summary:` field (≤200 chars)
-- [ ] Every synthesis page links back to its source concepts
-- [ ] Source concept pages link forward to the synthesis page
-- [ ] No synthesis page just restates what's already on the source pages — it must add a cross-cutting insight
-- [ ] `index.md` and `log.md` updated
-- [ ] `hot.md` updated
+`hot_update.recent_activity` should briefly summarize created syntheses. `hot_update.active_threads`
+should list the most important open questions from created pages. Put non-fatal issues in `warnings`,
+such as thin evidence, unclear candidate framing, or candidates that should be handled by another
+workflow.
 
-## Tips
+## Hard Constraints
 
-- **A synthesis page that only summarizes its sources is useless.** The value is the connection — the thing neither source page says explicitly.
-- **Don't synthesize for synthesis's sake.** If two concepts just happen to appear together a lot without a real conceptual link, skip them.
-- **Three-way syntheses are powerful but rare.** Only create them when three concepts form a genuine triangle of mutual influence — not just because all three appear in the same project page.
-- **Check `_insights.md` first.** The wiki-status skill may have already flagged synthesis candidates there — start with those before running the co-occurrence scan from scratch.
+- Do not mutate the deterministic packet.
+- Do not write anything except `synthesis_plan.json`.
+- Do not include `path`, `target_path`, `frontmatter`, `sources`, `created`, or `updated` in decisions.
+- Do not fabricate evidence beyond the packet.
+- Do not create pages for candidates you would not want permanently added to the wiki.
+- A synthesis page that only summarizes its sources is not useful; it must add a relationship-level
+  insight.

@@ -204,6 +204,22 @@ def build_parser() -> argparse.ArgumentParser:
                 action="store_true",
                 help="Do not append FIXLINK to log.md or update hot.md.",
             )
+        if name == "synthesize":
+            cmd.add_argument(
+                "--json",
+                action="store_true",
+                help="Print the final synthesize report as JSON instead of Markdown.",
+            )
+            cmd.add_argument(
+                "--dry-run",
+                action="store_true",
+                help="Run Codex and validate the synthesis plan without applying edits.",
+            )
+            cmd.add_argument(
+                "--no-log",
+                action="store_true",
+                help="Do not append WIKI_SYNTHESIZE to log.md.",
+            )
         cmd.add_argument("args", nargs="*", help="Arguments passed to the workflow.")
         add_dispatch_options(cmd)
         cmd.set_defaults(func=cmd_dispatch, alias=name)
@@ -326,6 +342,11 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
 
         vault = find_vault_root(Path.cwd())
         return run_fixlink(args, vault, load_wiki_config(vault))
+    elif alias == "synthesize":
+        from a_inf.synthesize import run_synthesize
+
+        vault = find_vault_root(Path.cwd())
+        return run_synthesize(args, vault, load_wiki_config(vault))
     else:
         skill = SKILL_ALIASES[alias]
     dispatch = build_dispatch(skill, args.args)
