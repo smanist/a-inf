@@ -4,6 +4,7 @@ import subprocess
 from pathlib import Path
 
 from a_inf import cli
+from a_inf import insights
 from a_inf import qmd
 
 
@@ -163,29 +164,59 @@ def test_status_insights_routes_to_wiki_insights(
     vault = tmp_path / "vault"
     vault.mkdir()
     (vault / ".manifest.json").write_text('{"version": 1}\n', encoding="utf-8")
-    calls: list[tuple[list[str], Path]] = []
+    calls: list[Path] = []
 
     class StatusArgs(Args):
         insights = True
         args: list[str] = []
 
     monkeypatch.chdir(vault)
-    monkeypatch.setattr(cli.shutil, "which", lambda _: "/usr/local/bin/codex")
-    sync_calls: list[Path] = []
-    monkeypatch.setattr(cli, "sync_qmd", lambda vault_arg, _config: sync_calls.append(vault_arg) or True)
-    monkeypatch.setattr(cli, "ensure_qmd_collection", lambda *_args, **_kwargs: True)
-
-    def fake_call(command: list[str], cwd: Path, env: dict[str, str] | None = None) -> int:
-        calls.append((command, cwd))
+    def fake_run(args: object, vault_arg: Path, config: dict[str, str]) -> int:
+        calls.append(vault_arg)
         return 0
 
-    monkeypatch.setattr(subprocess, "call", fake_call)
+    monkeypatch.setattr(insights, "run_insights", fake_run)
 
     result = cli.cmd_status(StatusArgs())
 
     assert result == 0
-    assert "Use the `wiki-insights` skill" in calls[0][0][-1]
-    assert sync_calls == []
+    assert calls == [vault]
+
+
+def test_cli_insights_dispatch_routes_to_engine(tmp_path: Path, monkeypatch) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / ".manifest.json").write_text('{"version": 1}\n', encoding="utf-8")
+    calls: list[Path] = []
+
+    class InsightArgs(Args):
+        alias = "insights"
+        args: list[str] = []
+        json = True
+        no_log = True
+
+    def fake_run(args: object, vault_arg: Path, config: dict[str, str]) -> int:
+        calls.append(vault_arg)
+        return 0
+
+    monkeypatch.chdir(vault)
+    monkeypatch.setattr(insights, "run_insights", fake_run)
+
+    result = cli.cmd_dispatch(InsightArgs())
+
+    assert result == 0
+    assert calls == [vault]
+
+
+def test_cli_parser_accepts_insights_flags() -> None:
+    parser = cli.build_parser()
+
+    args = parser.parse_args(["insights", "--json", "--no-log", "hubs"])
+
+    assert args.alias == "insights"
+    assert args.json is True
+    assert args.no_log is True
+    assert args.args == ["hubs"]
 
 
 def test_read_only_write_dispatch_skips_qmd_sync(tmp_path: Path, monkeypatch) -> None:

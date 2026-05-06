@@ -9,6 +9,7 @@ MANAGED_FILE_TITLES = {
     "index.md": "Wiki Index",
     "log.md": "Wiki Log",
     "hot.md": "Hot Cache",
+    "_insights.md": "Wiki Insights",
     "_meta/taxonomy.md": "Tag Taxonomy",
     "AGENTS.md": "Repository Instructions",
 }

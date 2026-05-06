@@ -139,6 +139,7 @@ def test_init_adds_managed_tag_to_existing_support_files(tmp_path: Path, monkeyp
     (vault / "index.md").write_text("# Wiki Index\n", encoding="utf-8")
     (vault / "log.md").write_text("---\ntitle: Wiki Log\n---\n\n# Wiki Log\n", encoding="utf-8")
     (vault / "hot.md").write_text("---\ntitle: Hot Cache\ntags: [session]\n---\n\n# Hot Cache\n", encoding="utf-8")
+    (vault / "_insights.md").write_text("# Wiki Insights\n", encoding="utf-8")
     (vault / "_meta" / "taxonomy.md").write_text(
         "---\ntitle: Tag Taxonomy\ntags: [taxonomy]\n---\n\n# Tag Taxonomy\n",
         encoding="utf-8",
@@ -152,6 +153,7 @@ def test_init_adds_managed_tag_to_existing_support_files(tmp_path: Path, monkeyp
     assert "tags: [a-inf]" in (vault / "index.md").read_text(encoding="utf-8")
     assert "tags: [a-inf]" in (vault / "log.md").read_text(encoding="utf-8")
     assert "tags: [session, a-inf]" in (vault / "hot.md").read_text(encoding="utf-8")
+    assert "tags: [a-inf]" in (vault / "_insights.md").read_text(encoding="utf-8")
     assert "tags: [taxonomy, a-inf]" in (vault / "_meta" / "taxonomy.md").read_text(encoding="utf-8")
     assert "tags: [a-inf]" in (vault / "AGENTS.md").read_text(encoding="utf-8")
     assert "# Existing Instructions" in (vault / "AGENTS.md").read_text(encoding="utf-8")

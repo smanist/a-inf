@@ -220,6 +220,17 @@ def build_parser() -> argparse.ArgumentParser:
                 action="store_true",
                 help="Do not append WIKI_SYNTHESIZE to log.md.",
             )
+        if name == "insights":
+            cmd.add_argument(
+                "--json",
+                action="store_true",
+                help="Print the final insights report as JSON instead of Markdown.",
+            )
+            cmd.add_argument(
+                "--no-log",
+                action="store_true",
+                help="Do not append WIKI_INSIGHTS to log.md.",
+            )
         cmd.add_argument("args", nargs="*", help="Arguments passed to the workflow.")
         add_dispatch_options(cmd)
         cmd.set_defaults(func=cmd_dispatch, alias=name)
@@ -347,6 +358,11 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
 
         vault = find_vault_root(Path.cwd())
         return run_synthesize(args, vault, load_wiki_config(vault))
+    elif alias == "insights":
+        from a_inf.insights import run_insights
+
+        vault = find_vault_root(Path.cwd())
+        return run_insights(args, vault, load_wiki_config(vault))
     else:
         skill = SKILL_ALIASES[alias]
     dispatch = build_dispatch(skill, args.args)
@@ -364,8 +380,10 @@ def cmd_status(args: argparse.Namespace) -> int:
         term in insight_terms
         for term in ["insight", "hubs", "hub", "central", "structure", "connected", "bridge"]
     ):
-        dispatch = build_dispatch("wiki-insights", getattr(args, "args", []))
-        return run_dispatch(dispatch, args)
+        from a_inf.insights import run_insights
+
+        vault = find_vault_root(Path.cwd())
+        return run_insights(args, vault, load_wiki_config(vault))
 
     vault = find_vault_root(Path.cwd())
     print(build_status_report(vault))

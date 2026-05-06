@@ -79,7 +79,7 @@ a-inf update
 a-inf history
 ```
 
-Most non-init workflows invoke `codex exec --sandbox workspace-write --cd <vault>` with a prompt generated from the relevant skill. `a-inf ingest` is the exception: it runs deterministic source selection and plan validation around a Codex-generated JSON ingest plan. To inspect the ingest packet without invoking Codex:
+Most non-init workflows invoke `codex exec --sandbox workspace-write --cd <vault>` with a prompt generated from the relevant skill. `a-inf ingest` and `a-inf insights` are hybrid exceptions: Python owns deterministic source/graph facts and Codex only supplies bounded JSON planning or explanation. To inspect the ingest packet without invoking Codex:
 
 ```bash
 a-inf ingest paper-xx --print-prompt
@@ -118,7 +118,7 @@ a-inf ingest --raw          # promote files from _raw/
 | `a-inf ingest <url>` | `wiki-ingest` |
 | `a-inf query` | `wiki-query` |
 | `a-inf status` | deterministic CLI |
-| `a-inf insights` | `wiki-insights` |
+| `a-inf insights` | deterministic CLI + `wiki-insights` explanations |
 | `a-inf update` | `wiki-update` |
 | `a-inf history` | `codex-history-ingest` |
 | `a-inf lint` | `wiki-lint` |
