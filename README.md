@@ -146,7 +146,7 @@ The bundled skills remain the source of truth for language-model workflows:
 ```text
 .skills/
 ├── codex-history-ingest/
-├── graph-colorize/
+├── wiki-colorize/
 ├── llm-wiki/
 ├── wiki-tags/
 ├── wiki-capture/

@@ -59,7 +59,7 @@ Prefer CLI commands for user-facing workflows. Bundled skills live in `.skills/<
 | "fix my tags" / "normalize tags" | `a-inf tags` | `wiki-tags` |
 | "update wiki" / "sync to wiki" | `a-inf update` | `wiki-update` |
 | "export wiki" / "export graph" | `a-inf export` | `wiki-export` |
-| "color my graph" | `a-inf colorize` | `graph-colorize` |
+| "color my graph" | `a-inf colorize` | `wiki-colorize` |
 | "save this" / "capture this" | `a-inf capture` | `wiki-capture` |
 | "research X" | `a-inf research X` | `wiki-research` |
 | "create a dashboard" | `a-inf dashboard` | `wiki-dashboard` |

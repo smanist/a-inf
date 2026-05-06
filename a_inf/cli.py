@@ -48,7 +48,7 @@ SKILL_ALIASES = {
     "capture": "wiki-capture",
     "synthesize": "wiki-synthesize",
     "dashboard": "wiki-dashboard",
-    "colorize": "graph-colorize",
+    "colorize": "wiki-colorize",
     "fixlink": "wiki-fixlink",
     "tags": "wiki-tags",
 }
@@ -63,7 +63,7 @@ QMD_SYNC_SKILLS = {
     "wiki-capture",
     "wiki-synthesize",
     "wiki-dashboard",
-    "graph-colorize",
+    "wiki-colorize",
     "wiki-fixlink",
     "wiki-tags",
 }
@@ -225,6 +225,28 @@ def build_parser() -> argparse.ArgumentParser:
                 "--no-log",
                 action="store_true",
                 help="Do not append TAG_NORMALIZE to log.md or update hot.md when using --fix.",
+            )
+        if name == "colorize":
+            cmd.add_argument(
+                "--mode",
+                choices=["by-tag", "by-category", "by-visibility", "combined", "custom", "clear", "undo"],
+                default=None,
+                help="Deterministic graph color mode. Default: by-tag.",
+            )
+            cmd.add_argument(
+                "--groups-json",
+                default=None,
+                help="JSON custom color mapping for --mode custom.",
+            )
+            cmd.add_argument(
+                "--json",
+                action="store_true",
+                help="Print the final colorize report as JSON instead of Markdown.",
+            )
+            cmd.add_argument(
+                "--no-log",
+                action="store_true",
+                help="Do not append GRAPH_COLORIZE to log.md.",
             )
         if name == "synthesize":
             cmd.add_argument(
@@ -390,6 +412,11 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
 
         vault = find_vault_root(Path.cwd())
         return run_tags(args, vault, load_wiki_config(vault))
+    elif alias == "colorize":
+        from a_inf.colorize import run_colorize
+
+        vault = find_vault_root(Path.cwd())
+        return run_colorize(args, vault, load_wiki_config(vault))
     else:
         skill = SKILL_ALIASES[alias]
     dispatch = build_dispatch(skill, args.args)

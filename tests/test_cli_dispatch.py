@@ -4,6 +4,7 @@ import subprocess
 from pathlib import Path
 
 from a_inf import cli
+from a_inf import colorize
 from a_inf import insights
 from a_inf import qmd
 
@@ -208,6 +209,34 @@ def test_cli_insights_dispatch_routes_to_engine(tmp_path: Path, monkeypatch) -> 
     assert calls == [vault]
 
 
+def test_cli_colorize_dispatch_routes_to_deterministic_engine(tmp_path: Path, monkeypatch) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / ".manifest.json").write_text('{"version": 1}\n', encoding="utf-8")
+    calls: list[Path] = []
+
+    class ColorizeArgs(Args):
+        alias = "colorize"
+        args: list[str] = []
+        mode = "by-tag"
+        groups_json = None
+        json = True
+        no_log = True
+
+    def fake_run(args: object, vault_arg: Path, config: dict[str, str]) -> int:
+        calls.append(vault_arg)
+        return 0
+
+    monkeypatch.chdir(vault)
+    monkeypatch.setattr(colorize, "run_colorize", fake_run)
+    monkeypatch.setattr(cli.shutil, "which", lambda _: (_ for _ in ()).throw(AssertionError("codex called")))
+
+    result = cli.cmd_dispatch(ColorizeArgs())
+
+    assert result == 0
+    assert calls == [vault]
+
+
 def test_cli_parser_accepts_insights_flags() -> None:
     parser = cli.build_parser()
 
@@ -217,6 +246,17 @@ def test_cli_parser_accepts_insights_flags() -> None:
     assert args.json is True
     assert args.no_log is True
     assert args.args == ["hubs"]
+
+
+def test_cli_parser_accepts_colorize_flags() -> None:
+    parser = cli.build_parser()
+
+    args = parser.parse_args(["colorize", "--mode", "custom", "--groups-json", '{"tag:#ml":"blue"}', "--json"])
+
+    assert args.alias == "colorize"
+    assert args.mode == "custom"
+    assert args.groups_json == '{"tag:#ml":"blue"}'
+    assert args.json is True
 
 
 def test_read_only_write_dispatch_skips_qmd_sync(tmp_path: Path, monkeypatch) -> None:

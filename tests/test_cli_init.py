@@ -80,8 +80,10 @@ def test_init_creates_vault_structure_and_local_skill_links(tmp_path: Path, monk
     skill_links = list((vault / ".agents" / "skills").iterdir())
     assert skill_links
     assert all(path.is_symlink() for path in skill_links)
+    assert (vault / ".agents" / "skills" / "wiki-colorize").is_symlink()
     assert (vault / ".agents" / "skills" / "wiki-fixlink").is_symlink()
     assert (vault / ".agents" / "skills" / "wiki-tags").is_symlink()
+    assert not (vault / ".agents" / "skills" / "graph-colorize").exists()
     assert not (vault / ".agents" / "skills" / "tag-taxonomy").exists()
     assert not (vault / ".agents" / "skills" / "cross-linker").exists()
     assert not (vault / ".agents" / "skills" / "wiki-setup").exists()

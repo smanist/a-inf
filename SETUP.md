@@ -128,7 +128,7 @@ a-inf ingest --raw          # promote files from _raw/
 | `a-inf capture` | `wiki-capture` |
 | `a-inf synthesize` | `wiki-synthesize` |
 | `a-inf dashboard` | `wiki-dashboard` |
-| `a-inf colorize` | `graph-colorize` |
+| `a-inf colorize` | `wiki-colorize` |
 | `a-inf fixlink` | `wiki-fixlink` |
 | `a-inf tags` | `wiki-tags` |
 
