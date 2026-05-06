@@ -235,3 +235,15 @@ def test_invalid_semantic_review_keeps_packet_output_valid(tmp_path: Path, monke
     packet = json.loads(capsys.readouterr().out)
     assert packet["semantic_review"]["status"] == "invalid"
     assert packet["findings"]["orphaned_pages"]
+
+
+def test_orphan_pages_ignore_a_inf_tagged_files(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    write_page(vault, "concepts/framework-note.md", tags=["a-inf"], body="")
+    write_page(vault, "concepts/user-note.md", tags=["systems"], body="")
+
+    packet = lint.build_lint_packet(vault, {})
+    orphan_pages = {item["page"] for item in packet["findings"]["orphaned_pages"]}
+
+    assert "concepts/framework-note.md" not in orphan_pages
+    assert "concepts/user-note.md" in orphan_pages

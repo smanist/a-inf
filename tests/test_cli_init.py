@@ -53,10 +53,18 @@ def test_init_creates_vault_structure_and_local_skill_links(tmp_path: Path, monk
     env = (vault / ".env").read_text(encoding="utf-8")
     assert f"QMD_WIKI_COLLECTION={vault.name}" in env
     assert f"QMD_PAPERS_COLLECTION={vault.name}" in env
+    graph = json.loads((vault / ".obsidian" / "graph.json").read_text(encoding="utf-8"))
+    assert graph["search"] == "-tag:#a-inf"
+    assert graph["collapse-filter"] is True
     assert (vault / "index.md").is_file()
     assert (vault / "log.md").is_file()
     assert (vault / "hot.md").is_file()
     assert (vault / "_meta" / "taxonomy.md").is_file()
+    assert "tags: [a-inf]" in (vault / "index.md").read_text(encoding="utf-8")
+    assert "tags: [a-inf]" in (vault / "log.md").read_text(encoding="utf-8")
+    assert "tags: [a-inf]" in (vault / "hot.md").read_text(encoding="utf-8")
+    assert "tags: [taxonomy, a-inf]" in (vault / "_meta" / "taxonomy.md").read_text(encoding="utf-8")
+    assert "tags: [a-inf]" in (vault / "AGENTS.md").read_text(encoding="utf-8")
     assert (vault / "AGENTS.md").read_text(encoding="utf-8").count("<!-- BEGIN A-INF -->") == 1
     gitignore = (vault / ".gitignore").read_text(encoding="utf-8")
     assert "# a-inf local configuration" in gitignore
@@ -110,3 +118,40 @@ def test_init_upgrades_existing_gitignore_section(tmp_path: Path, monkeypatch) -
     assert "_raw/" in gitignore
     assert ".env" in gitignore
     assert ".a-inf/" in gitignore
+
+
+def test_init_does_not_overwrite_existing_graph_settings(tmp_path: Path, monkeypatch) -> None:
+    vault = tmp_path / "vault"
+    (vault / ".obsidian").mkdir(parents=True)
+    (vault / ".obsidian" / "graph.json").write_text('{"search": "path:concepts"}\n', encoding="utf-8")
+    skills_source = Path(__file__).resolve().parents[1] / ".skills"
+    monkeypatch.setattr(cli, "ensure_qmd_collection", lambda *_args, **_kwargs: True)
+
+    assert cmd_init(Args(vault, skills_source)) == 0
+
+    graph = json.loads((vault / ".obsidian" / "graph.json").read_text(encoding="utf-8"))
+    assert graph == {"search": "path:concepts"}
+
+
+def test_init_adds_managed_tag_to_existing_support_files(tmp_path: Path, monkeypatch) -> None:
+    vault = tmp_path / "vault"
+    (vault / "_meta").mkdir(parents=True)
+    (vault / "index.md").write_text("# Wiki Index\n", encoding="utf-8")
+    (vault / "log.md").write_text("---\ntitle: Wiki Log\n---\n\n# Wiki Log\n", encoding="utf-8")
+    (vault / "hot.md").write_text("---\ntitle: Hot Cache\ntags: [session]\n---\n\n# Hot Cache\n", encoding="utf-8")
+    (vault / "_meta" / "taxonomy.md").write_text(
+        "---\ntitle: Tag Taxonomy\ntags: [taxonomy]\n---\n\n# Tag Taxonomy\n",
+        encoding="utf-8",
+    )
+    (vault / "AGENTS.md").write_text("# Existing Instructions\n", encoding="utf-8")
+    skills_source = Path(__file__).resolve().parents[1] / ".skills"
+    monkeypatch.setattr(cli, "ensure_qmd_collection", lambda *_args, **_kwargs: True)
+
+    assert cmd_init(Args(vault, skills_source)) == 0
+
+    assert "tags: [a-inf]" in (vault / "index.md").read_text(encoding="utf-8")
+    assert "tags: [a-inf]" in (vault / "log.md").read_text(encoding="utf-8")
+    assert "tags: [session, a-inf]" in (vault / "hot.md").read_text(encoding="utf-8")
+    assert "tags: [taxonomy, a-inf]" in (vault / "_meta" / "taxonomy.md").read_text(encoding="utf-8")
+    assert "tags: [a-inf]" in (vault / "AGENTS.md").read_text(encoding="utf-8")
+    assert "# Existing Instructions" in (vault / "AGENTS.md").read_text(encoding="utf-8")

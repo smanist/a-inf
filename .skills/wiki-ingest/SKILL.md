@@ -230,6 +230,7 @@ Other write skills may use this template if `hot.md` is missing. The determinist
 ```markdown
 ---
 title: Hot Cache
+tags: [a-inf]
 updated: TIMESTAMP
 ---
 

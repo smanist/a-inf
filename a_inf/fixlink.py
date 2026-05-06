@@ -14,6 +14,7 @@ from typing import Any
 
 from a_inf import lint
 from a_inf.ingest import load_wiki_config, parse_frontmatter_file, render_frontmatter, write_json
+from a_inf.managed_files import ensure_managed_tag, managed_tags
 from a_inf.qmd import ensure_qmd_collection, qmd_env, sync_qmd
 
 
@@ -667,9 +668,10 @@ def append_log(vault: Path, applied: dict[str, Any], post_packet: dict[str, Any]
     )
     path = vault / "log.md"
     if path.exists():
+        ensure_managed_tag(path, "Wiki Log")
         path.write_text(path.read_text(encoding="utf-8").rstrip() + "\n" + line, encoding="utf-8")
     else:
-        path.write_text("# Wiki Log\n\n" + line, encoding="utf-8")
+        path.write_text(f"---\ntitle: Wiki Log\ntags: {managed_tags()}\n---\n\n# Wiki Log\n\n" + line, encoding="utf-8")
 
 
 def write_hot(vault: Path, applied: dict[str, Any]) -> None:
@@ -682,6 +684,7 @@ def write_hot(vault: Path, applied: dict[str, Any]) -> None:
     content = [
         "---",
         "title: Hot Cache",
+        f"tags: {managed_tags()}",
         f"updated: {now}",
         "---",
         "",

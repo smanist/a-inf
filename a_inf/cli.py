@@ -14,6 +14,7 @@ from pathlib import Path
 import tomllib
 from urllib.parse import urlparse
 
+from a_inf.managed_files import ensure_managed_tag, ensure_vault_managed_tags, managed_tags
 from a_inf.qmd import ensure_qmd_collection, ensure_qmd_state_dirs, qmd_env, qmd_state_dirs, sync_qmd
 
 
@@ -258,6 +259,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     write_file_if_missing(vault / "log.md", log_template(vault))
     write_file_if_missing(vault / "hot.md", hot_template(vault))
     write_file_if_missing(vault / "_meta" / "taxonomy.md", taxonomy_template())
+    ensure_vault_managed_tags(vault, include_agents=False)
     write_json_if_missing(vault / ".manifest.json", manifest_template())
     write_json_if_missing(
         vault / ".obsidian" / "app.json",
@@ -269,6 +271,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         },
     )
     write_json_if_missing(vault / ".obsidian" / "appearance.json", {"baseFontSize": 16})
+    write_json_if_missing(vault / ".obsidian" / "graph.json", graph_template())
     write_local_config(vault, skills_source)
     write_file_if_missing(vault / ".env", env_template(vault))
 
@@ -276,6 +279,7 @@ def cmd_init(args: argparse.Namespace) -> int:
 
     if not args.no_agents:
         ensure_agents_section(vault / "AGENTS.md")
+        ensure_managed_tag(vault / "AGENTS.md", "Repository Instructions")
     if not args.no_gitignore:
         ensure_gitignore_section(vault / ".gitignore")
 
@@ -1049,6 +1053,7 @@ def now_iso() -> str:
 def index_template() -> str:
     return f"""---
 title: Wiki Index
+tags: {managed_tags()}
 ---
 
 # Wiki Index
@@ -1074,6 +1079,7 @@ title: Wiki Index
 def log_template(vault: Path) -> str:
     return f"""---
 title: Wiki Log
+tags: {managed_tags()}
 ---
 
 # Wiki Log
@@ -1085,6 +1091,7 @@ title: Wiki Log
 def hot_template(vault: Path) -> str:
     return f"""---
 title: Hot Cache
+tags: {managed_tags()}
 updated: {now_iso()}
 ---
 
@@ -1114,7 +1121,7 @@ def taxonomy_template() -> str:
     return f"""---
 title: Tag Taxonomy
 category: references
-tags: [taxonomy]
+tags: {managed_tags(["taxonomy"])}
 sources: []
 created: {now_iso()}
 updated: {now_iso()}
@@ -1124,6 +1131,31 @@ updated: {now_iso()}
 
 Canonical tags will be added here as the vault grows.
 """
+
+
+def graph_template() -> dict[str, object]:
+    return {
+        "collapse-filter": True,
+        "search": "-tag:#a-inf",
+        "showTags": False,
+        "showAttachments": False,
+        "hideUnresolved": False,
+        "showOrphans": True,
+        "collapse-color-groups": True,
+        "colorGroups": [],
+        "collapse-display": True,
+        "showArrow": False,
+        "textFadeMultiplier": 0,
+        "nodeSizeMultiplier": 1,
+        "lineSizeMultiplier": 1,
+        "collapse-forces": True,
+        "centerStrength": 0.518713248970312,
+        "repelStrength": 10,
+        "linkStrength": 1,
+        "linkDistance": 250,
+        "scale": 1,
+        "close": False,
+    }
 
 
 def env_template(vault: Path) -> str:

@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from a_inf.ingest import parse_datetime, parse_frontmatter_file, write_json
+from a_inf.managed_files import A_INF_TAG, ensure_managed_tag, managed_tags
 
 
 CONTENT_DIRS = ["concepts", "entities", "skills", "references", "synthesis", "journal", "projects", "misc"]
@@ -235,8 +236,12 @@ def find_orphans(pages: dict[str, Page], links: dict[str, Any]) -> list[dict[str
     return [
         {"page": rel, "incoming": incoming.get(rel, 0), "message": "no incoming wikilinks"}
         for rel in sorted(pages)
-        if incoming.get(rel, 0) == 0
+        if incoming.get(rel, 0) == 0 and not has_a_inf_tag(pages[rel])
     ]
+
+
+def has_a_inf_tag(page: Page) -> bool:
+    return A_INF_TAG in {tag.lstrip("#") for tag in page.tags}
 
 
 def find_broken_wikilinks(links: dict[str, Any]) -> list[dict[str, Any]]:
@@ -736,10 +741,11 @@ def append_lint_log(vault: Path, packet: dict[str, Any]) -> None:
         f"semantic_review={packet.get('semantic_review', {}).get('status', 'unknown')}\n"
     )
     if log_path.exists():
+        ensure_managed_tag(log_path, "Wiki Log")
         current = log_path.read_text(encoding="utf-8")
         log_path.write_text(current.rstrip() + "\n" + line, encoding="utf-8")
     else:
-        log_path.write_text("# Wiki Log\n\n" + line, encoding="utf-8")
+        log_path.write_text(f"---\ntitle: Wiki Log\ntags: {managed_tags()}\n---\n\n# Wiki Log\n\n" + line, encoding="utf-8")
 
 
 def create_lint_run_dir(vault: Path) -> Path:

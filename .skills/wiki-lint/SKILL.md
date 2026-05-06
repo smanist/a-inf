@@ -36,6 +36,8 @@ Read the deterministic packet first. Its important fields are:
 
 Treat deterministic `findings` as evidence, not something to recompute or restate.
 
+Pages tagged `a-inf` are framework-managed support files and are excluded from orphan-page findings by the deterministic lint pass.
+
 ## Scope Rules
 
 Follow the `Semantic scope` supplied by the CLI:

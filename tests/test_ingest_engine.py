@@ -498,8 +498,13 @@ def test_ingest_valid_plan_applies_pages_and_special_files(tmp_path: Path, monke
     index = (vault / "index.md").read_text(encoding="utf-8")
     assert "[[concepts/deterministic-ingest|Deterministic Ingest]]" in index
     assert " - A deterministic shell around semantic wiki ingest." in index
-    assert "INGEST" in (vault / "log.md").read_text(encoding="utf-8")
-    assert "Apply is deterministic." in (vault / "hot.md").read_text(encoding="utf-8")
+    assert "tags: [a-inf]" in index
+    log = (vault / "log.md").read_text(encoding="utf-8")
+    assert "tags: [a-inf]" in log
+    assert "INGEST" in log
+    hot = (vault / "hot.md").read_text(encoding="utf-8")
+    assert "tags: [a-inf]" in hot
+    assert "Apply is deterministic." in hot
 
 
 def test_url_ingest_valid_plan_applies_reference_and_manifest(tmp_path: Path, monkeypatch) -> None:

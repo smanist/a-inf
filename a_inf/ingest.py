@@ -15,6 +15,7 @@ from typing import Any
 import tomllib
 from urllib.parse import urlparse
 
+from a_inf.managed_files import ensure_managed_tag, managed_tags
 from a_inf.qmd import QmdInfo, ensure_qmd_collection, qmd_env, qmd_state_dirs, require_qmd, resolve_qmd, sync_qmd
 
 
@@ -1521,6 +1522,7 @@ def rebuild_index(vault: Path, config: dict[str, str], now: str) -> None:
     lines = [
         "---",
         "title: Wiki Index",
+        f"tags: {managed_tags()}",
         "---",
         "",
         "# Wiki Index",
@@ -1582,7 +1584,10 @@ def append_log(vault: Path, plan: ValidatedPlan, now: str, mode: str) -> None:
             f"pages_created={created} mode={mode}"
         )
     path = vault / "log.md"
-    existing = read_optional(path) or "---\ntitle: Wiki Log\n---\n\n# Wiki Log\n"
+    existing = read_optional(path) or f"---\ntitle: Wiki Log\ntags: {managed_tags()}\n---\n\n# Wiki Log\n"
+    if path.exists():
+        ensure_managed_tag(path, "Wiki Log")
+        existing = read_optional(path)
     path.write_text(existing.rstrip() + "\n" + "\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -1597,6 +1602,7 @@ def write_hot(vault: Path, plan: ValidatedPlan, now: str) -> None:
     content = [
         "---",
         "title: Hot Cache",
+        f"tags: {managed_tags()}",
         f"updated: {now}",
         "---",
         "",

@@ -114,6 +114,11 @@ Every wiki has these files at its root:
 A content-oriented catalog organized by category. Each entry has a one-line summary and tags. Rebuild this after every ingest operation. Format:
 
 ```markdown
+---
+title: Wiki Index
+tags: [a-inf]
+---
+
 # Wiki Index
 
 ## Concepts
