@@ -23,10 +23,10 @@ You are creating a `.base` file — an Obsidian Bases definition that turns vaul
 
 `.base` files define database-style views over vault notes. Each file declares:
 - **Which notes to include** — filtered by folder, tag, frontmatter property, or combination
-- **Which properties to show** — any frontmatter field becomes a column
-- **What view type** — `table`, `cards`, or `list`
-- **Sort and group** — by any property
-- **Computed columns** — formulas using `file.*` helpers and arithmetic
+- **Reusable formulas** — computed properties under top-level `formulas`
+- **Property display names** — under top-level `properties`
+- **One or more views** — `table`, `cards`, or `list`, each with an `order` list of displayed properties
+- **Optional grouping and summaries** — using the current Obsidian Bases `views` schema
 
 Embed a `.base` into any note with `![[MyBase.base]]`.
 
@@ -34,88 +34,102 @@ Embed a `.base` into any note with `![[MyBase.base]]`.
 
 Determine:
 - **What to show** — all pages in a category? Pages with a specific tag? A project's pages?
-- **What columns matter** — title, tags, created, updated, summary, category, project?
+- **What properties matter** — title, tags, created, updated, summary, category, project?
 - **View type** — table (default), cards (visual), or list (minimal)
-- **Sort order** — by updated (default), created, title, or a custom property
 - **Any filters** — date range, specific tags, folder scope
 
 ## Step 2: Generate the `.base` File
 
-The `.base` format is YAML. Here are the patterns you'll use:
+The `.base` format is YAML. Use the current Obsidian Bases schema: top-level `filters`, `formulas`, `properties`, `summaries`, and `views`. Do **not** use legacy top-level `columns` or `sort` keys.
 
 ### Basic table — all pages in a category folder
 ```yaml
 filters:
-  - type: folder
-    folder: concepts
-columns:
-  - property: file.name
-    title: Page
-  - property: tags
-    title: Tags
-  - property: summary
-    title: Summary
-  - property: updated
-    title: Updated
-sort:
-  - property: updated
-    direction: desc
-view: table
+  and:
+    - 'file.inFolder("concepts")'
+properties:
+  file.name:
+    displayName: Page
+  tags:
+    displayName: Tags
+  summary:
+    displayName: Summary
+  updated:
+    displayName: Updated
+views:
+  - type: table
+    name: "Concepts"
+    order:
+      - file.name
+      - tags
+      - summary
+      - updated
 ```
 
 ### Filtered by tag
 ```yaml
 filters:
-  - type: tag
-    tag: "#machine-learning"
-columns:
-  - property: file.name
-    title: Page
-  - property: category
-    title: Category
-  - property: summary
-    title: Summary
-  - property: created
-    title: Created
-sort:
-  - property: created
-    direction: desc
-view: table
+  and:
+    - 'file.hasTag("machine-learning")'
+properties:
+  file.name:
+    displayName: Page
+  category:
+    displayName: Category
+  summary:
+    displayName: Summary
+  created:
+    displayName: Created
+views:
+  - type: table
+    name: "Machine Learning"
+    order:
+      - file.name
+      - category
+      - summary
+      - created
 ```
 
 ### Multi-filter (folder AND tag)
 ```yaml
 filters:
-  operator: and
-  conditions:
-    - type: folder
-      folder: projects
-    - type: tag
-      tag: "#active"
-columns:
-  - property: file.name
-    title: Project
-  - property: summary
-    title: Summary
-  - property: updated
-    title: Last Updated
-view: cards
+  and:
+    - 'file.inFolder("projects")'
+    - 'file.hasTag("active")'
+properties:
+  file.name:
+    displayName: Project
+  summary:
+    displayName: Summary
+  updated:
+    displayName: Last Updated
+views:
+  - type: cards
+    name: "Active Projects"
+    order:
+      - file.name
+      - summary
+      - updated
 ```
 
 ### Computed column (days since last update)
 ```yaml
-columns:
-  - property: file.name
-    title: Page
-  - property: updated
-    title: Updated
-  - formula: "floor((now() - updated) / 86400000)"
-    title: Days Stale
-    type: number
-sort:
-  - formula: "floor((now() - updated) / 86400000)"
-    direction: desc
-view: table
+formulas:
+  days_stale: 'if(updated, (today() - date(updated)).days, (today() - file.mtime).days)'
+properties:
+  file.name:
+    displayName: Page
+  updated:
+    displayName: Updated
+  formula.days_stale:
+    displayName: Days Stale
+views:
+  - type: table
+    name: "Stale Pages"
+    order:
+      - file.name
+      - updated
+      - formula.days_stale
 ```
 
 ### Filter operators and functions available
@@ -123,7 +137,8 @@ view: table
 - `file.inFolder("path")` — boolean, true if page is in folder
 - `file.name` — the note's filename (without extension)
 - `file.path` — full vault-relative path
-- `now()` — current timestamp in ms
+- `now()` — current date/time
+- `today()` — current date
 - Arithmetic: `+`, `-`, `*`, `/`, `floor()`, `ceil()`
 - Comparison: `==`, `!=`, `>`, `<`, `>=`, `<=`
 

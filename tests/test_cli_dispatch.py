@@ -5,6 +5,7 @@ from pathlib import Path
 
 from a_inf import cli
 from a_inf import colorize
+from a_inf import dashboard
 from a_inf import insights
 from a_inf import qmd
 
@@ -237,6 +238,40 @@ def test_cli_colorize_dispatch_routes_to_deterministic_engine(tmp_path: Path, mo
     assert calls == [vault]
 
 
+def test_cli_dashboard_dispatch_routes_to_deterministic_engine(tmp_path: Path, monkeypatch) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / ".manifest.json").write_text('{"version": 1}\n', encoding="utf-8")
+    calls: list[Path] = []
+
+    class DashboardArgs(Args):
+        alias = "dashboard"
+        args: list[str] = []
+        recipe = "content-index"
+        folder = None
+        tag = None
+        view = "table"
+        name = None
+        title = None
+        limit = None
+        json = True
+        dry_run = True
+        no_log = True
+
+    def fake_run(args: object, vault_arg: Path, config: dict[str, str]) -> int:
+        calls.append(vault_arg)
+        return 0
+
+    monkeypatch.chdir(vault)
+    monkeypatch.setattr(dashboard, "run_dashboard", fake_run)
+    monkeypatch.setattr(cli.shutil, "which", lambda _: (_ for _ in ()).throw(AssertionError("codex called")))
+
+    result = cli.cmd_dispatch(DashboardArgs())
+
+    assert result == 0
+    assert calls == [vault]
+
+
 def test_cli_parser_accepts_insights_flags() -> None:
     parser = cli.build_parser()
 
@@ -257,6 +292,45 @@ def test_cli_parser_accepts_colorize_flags() -> None:
     assert args.mode == "custom"
     assert args.groups_json == '{"tag:#ml":"blue"}'
     assert args.json is True
+
+
+def test_cli_parser_accepts_dashboard_flags() -> None:
+    parser = cli.build_parser()
+
+    args = parser.parse_args(
+        [
+            "dashboard",
+            "--recipe",
+            "stale-pages",
+            "--folder",
+            "concepts",
+            "--tag",
+            "ml",
+            "--view",
+            "cards",
+            "--name",
+            "ml-stale",
+            "--title",
+            "ML Stale",
+            "--limit",
+            "12",
+            "--json",
+            "--dry-run",
+            "--no-log",
+        ]
+    )
+
+    assert args.alias == "dashboard"
+    assert args.recipe == "stale-pages"
+    assert args.folder == "concepts"
+    assert args.tag == "ml"
+    assert args.view == "cards"
+    assert args.name == "ml-stale"
+    assert args.title == "ML Stale"
+    assert args.limit == 12
+    assert args.json is True
+    assert args.dry_run is True
+    assert args.no_log is True
 
 
 def test_read_only_write_dispatch_skips_qmd_sync(tmp_path: Path, monkeypatch) -> None:

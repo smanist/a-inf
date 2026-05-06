@@ -264,6 +264,47 @@ def build_parser() -> argparse.ArgumentParser:
                 action="store_true",
                 help="Do not append WIKI_SYNTHESIZE to log.md.",
             )
+        if name == "dashboard":
+            cmd.add_argument(
+                "--recipe",
+                choices=[
+                    "content-index",
+                    "entities",
+                    "recent-ingests",
+                    "stale-pages",
+                    "projects",
+                    "tag-cloud",
+                    "research",
+                ],
+                default=None,
+                help="Deterministic dashboard recipe. Defaults to content-index when no request text is given.",
+            )
+            cmd.add_argument("--folder", default=None, help="Add a folder filter to the dashboard.")
+            cmd.add_argument("--tag", default=None, help="Add a tag filter to the dashboard.")
+            cmd.add_argument(
+                "--view",
+                choices=["table", "cards", "list"],
+                default=None,
+                help="Obsidian Bases view type. Default: table.",
+            )
+            cmd.add_argument("--name", default=None, help="Output slug for _meta/<name>.base.")
+            cmd.add_argument("--title", default=None, help="Display title for the default view.")
+            cmd.add_argument("--limit", type=int, default=None, help="Optional view result limit.")
+            cmd.add_argument(
+                "--json",
+                action="store_true",
+                help="Print the final dashboard report as JSON instead of Markdown.",
+            )
+            cmd.add_argument(
+                "--dry-run",
+                action="store_true",
+                help="Validate and render the dashboard without writing the .base file or log.",
+            )
+            cmd.add_argument(
+                "--no-log",
+                action="store_true",
+                help="Do not append WIKI_DASHBOARD to log.md.",
+            )
         if name == "insights":
             cmd.add_argument(
                 "--json",
@@ -417,6 +458,11 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
 
         vault = find_vault_root(Path.cwd())
         return run_colorize(args, vault, load_wiki_config(vault))
+    elif alias == "dashboard":
+        from a_inf.dashboard import run_dashboard
+
+        vault = find_vault_root(Path.cwd())
+        return run_dashboard(args, vault, load_wiki_config(vault))
     else:
         skill = SKILL_ALIASES[alias]
     dispatch = build_dispatch(skill, args.args)
