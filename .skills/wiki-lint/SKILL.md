@@ -77,7 +77,7 @@ Do not promote when:
 
 - Existing pages already explain the relationship well.
 - The pair merely appears together without a real conceptual relationship.
-- A better action is cross-linking, tag cleanup, or re-ingest rather than synthesis.
+- A better action is fixlinking, tag cleanup, or re-ingest rather than synthesis.
 
 ### 3. Repair Recommendations
 
@@ -87,7 +87,7 @@ Examples:
 
 - Run `a-inf synthesize` for a promoted synthesis gap.
 - Run `a-inf research <topic>` to resolve a promoted contradiction.
-- Run `a-inf cross-link` for a fragmented tag cluster or orphan set.
+- Run `a-inf fixlink` for a fragmented tag cluster or orphan set.
 - Re-ingest or re-source pages with high ambiguity or stale verified status.
 
 Do not recommend direct lifecycle changes unless the packet already shows a mechanical schema inconsistency. Human editors own lifecycle transitions.

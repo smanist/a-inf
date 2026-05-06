@@ -48,7 +48,7 @@ SKILL_ALIASES = {
     "synthesize": "wiki-synthesize",
     "dashboard": "wiki-dashboard",
     "colorize": "graph-colorize",
-    "cross-link": "cross-linker",
+    "fixlink": "wiki-fixlink",
     "tags": "tag-taxonomy",
 }
 
@@ -63,7 +63,7 @@ QMD_SYNC_SKILLS = {
     "wiki-synthesize",
     "wiki-dashboard",
     "graph-colorize",
-    "cross-linker",
+    "wiki-fixlink",
     "tag-taxonomy",
 }
 
@@ -144,7 +144,7 @@ def build_parser() -> argparse.ArgumentParser:
         "synthesize",
         "dashboard",
         "colorize",
-        "cross-link",
+        "fixlink",
         "tags",
     ]:
         cmd = sub.add_parser(name, help=f"Run the {SKILL_ALIASES[name]} workflow.")
@@ -186,6 +186,22 @@ def build_parser() -> argparse.ArgumentParser:
                 "--no-log",
                 action="store_true",
                 help="Do not append the default LINT entry to log.md.",
+            )
+        if name == "fixlink":
+            cmd.add_argument(
+                "--json",
+                action="store_true",
+                help="Print the final fixlink report as JSON instead of Markdown.",
+            )
+            cmd.add_argument(
+                "--dry-run",
+                action="store_true",
+                help="Run Codex and validate the repair plan without applying edits.",
+            )
+            cmd.add_argument(
+                "--no-log",
+                action="store_true",
+                help="Do not append FIXLINK to log.md or update hot.md.",
             )
         cmd.add_argument("args", nargs="*", help="Arguments passed to the workflow.")
         add_dispatch_options(cmd)
@@ -301,6 +317,11 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
 
         vault = find_vault_root(Path.cwd())
         return run_lint(args, vault, load_wiki_config(vault))
+    elif alias == "fixlink":
+        from a_inf.fixlink import run_fixlink
+
+        vault = find_vault_root(Path.cwd())
+        return run_fixlink(args, vault, load_wiki_config(vault))
     else:
         skill = SKILL_ALIASES[alias]
     dispatch = build_dispatch(skill, args.args)

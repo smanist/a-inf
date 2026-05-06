@@ -43,7 +43,7 @@ signal rather than treating them as real hubs.
 
 1. **Anchor pages (top hubs).** Rank all pages by incoming count, take the top 10, and show incoming
    and outgoing counts. Pages with high incoming and high outgoing are connector hubs. Pages with high
-   incoming but zero outgoing are sink hubs and cross-linker candidates.
+   incoming but zero outgoing are sink hubs and wiki-fixlink candidates.
 
 2. **Bridge pages.** Find pages that connect otherwise-disconnected tag clusters. For each page `P`,
    count pairs `(A, B)` where `A` links to `P`, `P` links to `B` (or the reverse), `A` and `B` share no
@@ -55,7 +55,7 @@ signal rather than treating them as real hubs.
    `cohesion = actual_links / (n * (n - 1) / 2)`
 
    where `actual_links` is the number of wikilinks between pages sharing that tag. Show the 5 most
-   cohesive tags and the 5 most fragmented tags. Tags with cohesion below `0.15` are cross-linker targets.
+   cohesive tags and the 5 most fragmented tags. Tags with cohesion below `0.15` are wiki-fixlink targets.
 
 4. **Surprising connections.** Score cross-category wikilinks:
 
@@ -89,7 +89,7 @@ a compact graph snapshot as an HTML comment at the end so the next run can diff 
 | Page | Incoming | Outgoing | Note |
 |---|---|---|---|
 | [[concepts/transformer-architecture]] | 23 | 8 | connector hub |
-| [[entities/andrej-karpathy]] | 17 | 0 | sink hub - cross-linker candidate |
+| [[entities/andrej-karpathy]] | 17 | 0 | sink hub - wiki-fixlink candidate |
 
 ## Bridge Pages (top 5)
 | Page | Bridges | Cross-cluster pairs |
@@ -99,8 +99,8 @@ a compact graph snapshot as an HTML comment at the end so the next run can diff 
 ## Tag Cluster Cohesion
 ### Most cohesive (well-linked)
 - **#ml** - 12 pages, cohesion 0.41
-### Most fragmented (cross-linker targets)
-- **#systems** - 7 pages, cohesion 0.06 - run cross-linker on this tag
+### Most fragmented (wiki-fixlink targets)
+- **#systems** - 7 pages, cohesion 0.06 - run `a-inf fixlink`
 
 ## Surprising Connections (top 5)
 - [[concepts/scaling-laws]] -> [[entities/gordon-moore]] - score 5

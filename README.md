@@ -28,7 +28,7 @@ a-inf query "what do I know about rate limiting?"
 
 `a-inf init` is local and deterministic. It creates the vault folders, seed files, `.a-inf/config.toml`, a compatibility `.env`, Obsidian config, `.gitignore` entries for local config, and local Codex skill symlinks under `.agents/skills/`. New `.env` files default `QMD_WIKI_COLLECTION` and `QMD_PAPERS_COLLECTION` to the repo directory name, and init creates the matching QMD collection.
 
-`a-inf ingest` now runs a hybrid deterministic engine: Python selects sources, extracts URL content with `defuddle`, optionally extracts PDF markdown with MinerU, computes hashes, asks Codex for a JSON ingest plan, validates the whole plan, and only then writes wiki files. `a-inf query` also starts deterministically: Python builds a QMD-backed retrieval packet, then asks Codex only to synthesize the final cited answer. `a-inf lint` follows the same hybrid pattern: Python builds a deterministic health packet, then Codex can append semantic review findings for contradictions and synthesis gaps. After successful write workflows, the CLI refreshes QMD with `qmd update` and `qmd embed`. Other synthesis-heavy commands still dispatch to Codex with the matching skill. Use `--print-prompt` to inspect the generated ingest packet, query packet, lint semantic-review prompt, or dispatch prompt instead:
+`a-inf ingest` now runs a hybrid deterministic engine: Python selects sources, extracts URL content with `defuddle`, optionally extracts PDF markdown with MinerU, computes hashes, asks Codex for a JSON ingest plan, validates the whole plan, and only then writes wiki files. `a-inf query` also starts deterministically: Python builds a QMD-backed retrieval packet, then asks Codex only to synthesize the final cited answer. `a-inf lint` follows the same hybrid pattern: Python builds a deterministic health packet, then Codex can append semantic review findings for contradictions and synthesis gaps. `a-inf fixlink` uses lint's deterministic graph packet to ask Codex for bounded link decisions, then Python validates and applies the edits. After successful write workflows, the CLI refreshes QMD with `qmd update` and `qmd embed`. Other synthesis-heavy commands still dispatch to Codex with the matching skill. Use `--print-prompt` to inspect the generated ingest packet, query packet, lint semantic-review prompt, fixlink packet, or dispatch prompt instead:
 
 ```bash
 a-inf ingest paper-xx --print-prompt
@@ -84,7 +84,7 @@ If `AGENTS.md` already exists, `a-inf init` appends a small marked `a-inf` secti
 | `a-inf synthesize` | Find synthesis gaps |
 | `a-inf dashboard` | Create Obsidian Bases dashboards |
 | `a-inf colorize` | Configure graph colors |
-| `a-inf cross-link` | Add missing wikilinks |
+| `a-inf fixlink` | Add missing wikilinks |
 | `a-inf tags` | Normalize tag taxonomy |
 | `a-inf skill <name> ...` | Dispatch any bundled skill by name |
 
@@ -146,13 +146,13 @@ The bundled skills remain the source of truth for language-model workflows:
 ```text
 .skills/
 ├── codex-history-ingest/
-├── cross-linker/
 ├── graph-colorize/
 ├── llm-wiki/
 ├── tag-taxonomy/
 ├── wiki-capture/
 ├── wiki-dashboard/
 ├── wiki-export/
+├── wiki-fixlink/
 ├── wiki-history-ingest/
 ├── wiki-insights/
 ├── wiki-ingest/

@@ -129,7 +129,7 @@ a-inf ingest --raw          # promote files from _raw/
 | `a-inf synthesize` | `wiki-synthesize` |
 | `a-inf dashboard` | `wiki-dashboard` |
 | `a-inf colorize` | `graph-colorize` |
-| `a-inf cross-link` | `cross-linker` |
+| `a-inf fixlink` | `wiki-fixlink` |
 | `a-inf tags` | `tag-taxonomy` |
 
 ## Config

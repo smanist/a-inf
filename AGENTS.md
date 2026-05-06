@@ -55,7 +55,7 @@ Prefer CLI commands for user-facing workflows. Bundled skills live in `.skills/<
 | "what do I know about X" / any question | `a-inf query "X"` | `wiki-query` |
 | "audit" / "lint" / "find broken links" | `a-inf lint` | `wiki-lint` |
 | "rebuild" / "archive" / "restore" | `a-inf rebuild` | `wiki-rebuild` |
-| "link my pages" / "cross-reference" | `a-inf cross-link` | `cross-linker` |
+| "link my pages" / "cross-reference" | `a-inf fixlink` | `wiki-fixlink` |
 | "fix my tags" / "normalize tags" | `a-inf tags` | `tag-taxonomy` |
 | "update wiki" / "sync to wiki" | `a-inf update` | `wiki-update` |
 | "export wiki" / "export graph" | `a-inf export` | `wiki-export` |

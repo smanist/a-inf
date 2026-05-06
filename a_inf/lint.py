@@ -373,7 +373,7 @@ def find_fragmented_tag_clusters(pages: dict[str, Page], links: dict[str, Any]) 
                     "pages": n,
                     "actual_links": actual,
                     "cohesion": round(cohesion, 3),
-                    "message": "fragmented tag cluster; run cross-linker targeted at this tag",
+                    "message": "fragmented tag cluster; run a-inf fixlink",
                 }
             )
     return issues
