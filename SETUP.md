@@ -130,7 +130,7 @@ a-inf ingest --raw          # promote files from _raw/
 | `a-inf dashboard` | `wiki-dashboard` |
 | `a-inf colorize` | `graph-colorize` |
 | `a-inf fixlink` | `wiki-fixlink` |
-| `a-inf tags` | `tag-taxonomy` |
+| `a-inf tags` | `wiki-tags` |
 
 ## Config
 

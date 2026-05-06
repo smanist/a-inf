@@ -56,7 +56,7 @@ Prefer CLI commands for user-facing workflows. Bundled skills live in `.skills/<
 | "audit" / "lint" / "find broken links" | `a-inf lint` | `wiki-lint` |
 | "rebuild" / "archive" / "restore" | `a-inf rebuild` | `wiki-rebuild` |
 | "link my pages" / "cross-reference" | `a-inf fixlink` | `wiki-fixlink` |
-| "fix my tags" / "normalize tags" | `a-inf tags` | `tag-taxonomy` |
+| "fix my tags" / "normalize tags" | `a-inf tags` | `wiki-tags` |
 | "update wiki" / "sync to wiki" | `a-inf update` | `wiki-update` |
 | "export wiki" / "export graph" | `a-inf export` | `wiki-export` |
 | "color my graph" | `a-inf colorize` | `graph-colorize` |

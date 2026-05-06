@@ -50,7 +50,7 @@ SKILL_ALIASES = {
     "dashboard": "wiki-dashboard",
     "colorize": "graph-colorize",
     "fixlink": "wiki-fixlink",
-    "tags": "tag-taxonomy",
+    "tags": "wiki-tags",
 }
 
 QMD_SYNC_SKILLS = {
@@ -65,7 +65,7 @@ QMD_SYNC_SKILLS = {
     "wiki-dashboard",
     "graph-colorize",
     "wiki-fixlink",
-    "tag-taxonomy",
+    "wiki-tags",
 }
 
 
@@ -203,6 +203,28 @@ def build_parser() -> argparse.ArgumentParser:
                 "--no-log",
                 action="store_true",
                 help="Do not append FIXLINK to log.md or update hot.md.",
+            )
+        if name == "tags":
+            cmd.add_argument(
+                "--json",
+                action="store_true",
+                help="Print the final tag audit or normalization report as JSON instead of Markdown.",
+            )
+            cmd.add_argument(
+                "--fix",
+                action="store_true",
+                help="Apply the latest edited tag_plan.json from a previous a-inf tags run.",
+            )
+            cmd.add_argument(
+                "--plan",
+                type=Path,
+                default=None,
+                help="Apply a specific tag_plan.json when used with --fix.",
+            )
+            cmd.add_argument(
+                "--no-log",
+                action="store_true",
+                help="Do not append TAG_NORMALIZE to log.md or update hot.md when using --fix.",
             )
         if name == "synthesize":
             cmd.add_argument(
@@ -363,6 +385,11 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
 
         vault = find_vault_root(Path.cwd())
         return run_insights(args, vault, load_wiki_config(vault))
+    elif alias == "tags":
+        from a_inf.tags import run_tags
+
+        vault = find_vault_root(Path.cwd())
+        return run_tags(args, vault, load_wiki_config(vault))
     else:
         skill = SKILL_ALIASES[alias]
     dispatch = build_dispatch(skill, args.args)

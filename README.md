@@ -85,7 +85,7 @@ If `AGENTS.md` already exists, `a-inf init` appends a small marked `a-inf` secti
 | `a-inf dashboard` | Create Obsidian Bases dashboards |
 | `a-inf colorize` | Configure graph colors |
 | `a-inf fixlink` | Add missing wikilinks |
-| `a-inf tags` | Normalize tag taxonomy |
+| `a-inf tags` | Audit and normalize wiki tags |
 | `a-inf skill <name> ...` | Dispatch any bundled skill by name |
 
 ## Codex Dispatch
@@ -148,7 +148,7 @@ The bundled skills remain the source of truth for language-model workflows:
 ├── codex-history-ingest/
 ├── graph-colorize/
 ├── llm-wiki/
-├── tag-taxonomy/
+├── wiki-tags/
 ├── wiki-capture/
 ├── wiki-dashboard/
 ├── wiki-export/
