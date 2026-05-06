@@ -28,7 +28,7 @@ a-inf query "what do I know about rate limiting?"
 
 `a-inf init` is local and deterministic. It creates the vault folders, seed files, `.a-inf/config.toml`, a compatibility `.env`, Obsidian config, `.gitignore` entries for local config, and local Codex skill symlinks under `.agents/skills/`. New `.env` files default `QMD_WIKI_COLLECTION` and `QMD_PAPERS_COLLECTION` to the repo directory name, and init creates the matching QMD collection.
 
-`a-inf ingest` now runs a hybrid deterministic engine: Python selects sources, extracts URL content with `defuddle`, optionally extracts PDF markdown with MinerU, computes hashes, asks Codex for a JSON ingest plan, validates the whole plan, and only then writes wiki files. `a-inf query` also starts deterministically: Python builds a QMD-backed retrieval packet, then asks Codex only to synthesize the final cited answer. After successful write workflows, the CLI refreshes QMD with `qmd update` and `qmd embed`. Other synthesis-heavy commands still dispatch to Codex with the matching skill. Use `--print-prompt` to inspect the generated ingest packet, query packet, or dispatch prompt instead:
+`a-inf ingest` now runs a hybrid deterministic engine: Python selects sources, extracts URL content with `defuddle`, optionally extracts PDF markdown with MinerU, computes hashes, asks Codex for a JSON ingest plan, validates the whole plan, and only then writes wiki files. `a-inf query` also starts deterministically: Python builds a QMD-backed retrieval packet, then asks Codex only to synthesize the final cited answer. `a-inf lint` follows the same hybrid pattern: Python builds a deterministic health packet, then Codex can append semantic review findings for contradictions and synthesis gaps. After successful write workflows, the CLI refreshes QMD with `qmd update` and `qmd embed`. Other synthesis-heavy commands still dispatch to Codex with the matching skill. Use `--print-prompt` to inspect the generated ingest packet, query packet, lint semantic-review prompt, or dispatch prompt instead:
 
 ```bash
 a-inf ingest paper-xx --print-prompt
@@ -108,6 +108,8 @@ a-inf ingest --raw
 Use `--sandbox read-only` for dry inspection workflows that still invoke Codex, or `--add-dir <path>` when an ingest source lives outside the vault and Codex needs access to it. `a-inf history` automatically adds `CODEX_HISTORY_PATH` or `~/.codex` when that directory exists.
 
 Commands that can be fully deterministic should move into Python over time. `a-inf status` is now deterministic local Python; commands that require synthesis can keep using Codex behind the CLI.
+
+`a-inf lint --json` prints the full health packet, including deterministic findings and semantic candidates. Plain `a-inf lint` renders human Markdown and hides raw semantic candidates unless Codex promotes them. Use `a-inf lint --no-codex` for deterministic-only output, `--semantic-scope broad` to allow wider semantic review, and `--no-log` to avoid appending the default `LINT` entry to `log.md`.
 
 ## Configuration
 

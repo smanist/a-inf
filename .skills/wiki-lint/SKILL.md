@@ -1,327 +1,157 @@
 ---
 name: wiki-lint
 description: >
-  Audit and maintain the health of the Obsidian wiki. Use this skill when the user wants to check their
-  wiki for issues, find orphaned pages, detect contradictions, identify stale content, fix broken wikilinks,
-  or perform general maintenance on their knowledge base. Also triggers on "clean up the wiki",
-  "what needs fixing", "audit my notes", or "wiki health check".
+  Semantic review layer for `a-inf lint`. The CLI now performs deterministic wiki health checks and
+  passes this skill a JSON health packet. Use this skill to promote contradiction and synthesis-gap
+  candidates into actual semantic findings, not to re-run mechanical lint checks.
 ---
 
-# Wiki Lint — Health Audit
+# Wiki Lint — Semantic Review
 
-You are performing a health check on an Obsidian wiki. Your goal is to find and fix structural issues that degrade the wiki's value over time.
+`a-inf lint` is packet-first:
 
-**Before scanning anything:** follow the Retrieval Primitives table in `llm-wiki/SKILL.md`. Prefer frontmatter-scoped greps and section-anchored reads over full-page reads. On a large vault, blindly reading every page to lint it is exactly what this framework is built to avoid.
+1. Python builds a deterministic health packet with hard findings and semantic candidates.
+2. Codex reads that packet and this skill.
+3. Codex writes a separate `semantic_review.json`.
+4. The CLI validates and appends that object as `semantic_review` without letting it overwrite deterministic fields.
 
-## Before You Start
+Do **not** edit wiki files, `log.md`, `index.md`, `.manifest.json`, `hot.md`, or the deterministic packet. The CLI owns packet generation, rendering, validation, and logging.
 
-1. Read `.env` to get `OBSIDIAN_VAULT_PATH`
-2. Read `index.md` for the full page inventory
-3. Read `log.md` for recent activity context
+## Inputs
 
-## Lint Checks
+The CLI prompt includes:
 
-Run these checks in order. Report findings as you go.
+- `Vault path`
+- `Deterministic packet path`
+- `Write semantic review JSON to`
+- `Semantic scope`
+- Scope instructions
 
-### 1. Orphaned Pages
+Read the deterministic packet first. Its important fields are:
 
-Find pages with zero incoming wikilinks. These are knowledge islands that nothing connects to.
+- `findings` — deterministic hard findings such as broken links, orphans, metadata issues, stale pages, provenance drift, visibility issues, fragmented tag clusters, promotion candidates, and lifecycle/confidence issues.
+- `candidates.contradiction_candidates` — page pairs or clusters that deterministic signals suggest may contain conflicting claims.
+- `candidates.synthesis_gap_candidates` — concept/entity pairs that co-occur often and may deserve synthesis.
+- `page_registry` and `graph` — page metadata and resolved/broken edge evidence for targeted reading.
 
-**How to check:**
-- Glob all `.md` files in the vault
-- For each page, Grep the rest of the vault for `[[page-name]]` references
-- Pages with zero incoming links (except `index.md` and `log.md`) are orphans
+Treat deterministic `findings` as evidence, not something to recompute or restate.
 
-**How to fix:**
-- Identify which existing pages should link to the orphan
-- Add wikilinks in appropriate sections
+## Scope Rules
 
-### 2. Broken Wikilinks
+Follow the `Semantic scope` supplied by the CLI:
 
-Find `[[wikilinks]]` that point to pages that don't exist.
+- `one-hop`: You may read pages directly referenced by semantic candidates plus their one-hop wikilink neighbors. Do not roam beyond that set.
+- `broad`: You may use the retrieval primitives from `llm-wiki/SKILL.md` across the vault, but still prefer targeted greps and section reads over whole-page reads.
 
-**How to check:**
-- Grep for `\[\[.*?\]\]` across all pages
-- Extract the link targets
-- Check if a corresponding `.md` file exists
+In both modes, use the cheapest read that can answer the semantic question. Avoid full-page reads unless the candidate evidence is not enough.
 
-**How to fix:**
-- If the target was renamed, update the link
-- If the target should exist, create it
-- If the link is wrong, remove or correct it
+## Review Tasks
 
-### 3. Missing Frontmatter
+### 1. Promote Contradictions
 
-Every page should have: title, category, tags, sources, created, updated.
+For each `contradiction_candidate`, decide whether the pages actually conflict.
 
-**How to check:**
-- Grep frontmatter blocks (scope to `^---` at file heads) instead of reading every page in full
-- Flag pages missing required fields
+Promote only when:
 
-**How to fix:**
-- Add missing fields with reasonable defaults
+- Two or more pages make incompatible claims, recommendations, definitions, states, or assumptions.
+- The disagreement is not already clearly framed as a known trade-off or open question.
+- You can cite concise evidence from the involved pages.
 
-### 3a. Missing Summary (soft warning)
+Do not promote when:
 
-Every page *should* have a `summary:` frontmatter field — 1–2 sentences, ≤200 chars. This is what cheap retrieval (e.g. `wiki-query`'s index-only mode) reads to avoid opening page bodies.
+- The pages merely use contrastive language.
+- The claims differ by context, version, date, or scope and can both be true.
+- The packet suggests a conflict but the relevant page text is absent or insufficient.
 
-**How to check:**
-- Grep frontmatter for `^summary:` across the vault
-- Flag pages without it, **but as a soft warning, not an error** — older pages predating this field are fine; the check exists to nudge ingest skills into filling it on new writes.
-- Also flag pages whose summary exceeds 200 chars.
+### 2. Promote Synthesis Gaps
 
-**How to fix:**
-- Re-ingest the page, or manually write a short summary (1–2 sentences of the page's content).
+For each `synthesis_gap_candidate`, decide whether the co-occurring concepts deserve a dedicated synthesis page.
 
-### 4. Stale Content
+Promote only when:
 
-Pages whose `updated` timestamp is old relative to their sources.
+- The concepts/entities interact in a way not already captured by an existing `synthesis/` page.
+- A synthesis page would add a cross-cutting insight, tension, decision frame, or reusable pattern.
+- The co-occurrence is semantically meaningful, not just a shared tag or incidental project mention.
 
-**How to check:**
-- Compare page `updated` timestamps to source file modification times
-- Flag pages where sources have been modified after the page was last updated
+Do not promote when:
 
-### 5. Contradictions
+- Existing pages already explain the relationship well.
+- The pair merely appears together without a real conceptual relationship.
+- A better action is cross-linking, tag cleanup, or re-ingest rather than synthesis.
 
-Claims that conflict across pages.
+### 3. Repair Recommendations
 
-**How to check:**
-- This requires reading related pages and comparing claims
-- Focus on pages that share tags or are heavily cross-referenced
-- Look for phrases like "however", "in contrast", "despite" that may signal existing acknowledged contradictions vs. unacknowledged ones
+Add concise repair recommendations only for semantic issues you promoted or hard deterministic findings whose next step is clear from the packet.
 
-**How to fix:**
-- Add an "Open Questions" section noting the contradiction
-- Reference both sources and their claims
+Examples:
 
-### 6. Index Consistency
+- Run `a-inf synthesize` for a promoted synthesis gap.
+- Run `a-inf research <topic>` to resolve a promoted contradiction.
+- Run `a-inf cross-link` for a fragmented tag cluster or orphan set.
+- Re-ingest or re-source pages with high ambiguity or stale verified status.
 
-Verify `index.md` matches the actual page inventory.
+Do not recommend direct lifecycle changes unless the packet already shows a mechanical schema inconsistency. Human editors own lifecycle transitions.
 
-**How to check:**
-- Compare pages listed in `index.md` to actual files on disk
-- Check that summaries in `index.md` still match page content
+## Output Contract
 
-### 7. Provenance Drift
+Write exactly one JSON object to the path named by `Write semantic review JSON to`. Do not print Markdown.
 
-Check whether pages are being honest about how much of their content is inferred vs extracted. See the Provenance Markers section in `llm-wiki` for the convention.
+Required shape:
 
-**How to check:**
-- For each page with a `provenance:` block or any `^[inferred]`/`^[ambiguous]` markers, count sentences/bullets and how many end with each marker
-- Compute rough fractions (`extracted`, `inferred`, `ambiguous`)
-- Apply these thresholds:
-  - **AMBIGUOUS > 15%**: flag as "speculation-heavy" — even 1-in-7 claims being genuinely uncertain is a signal the page needs tighter sourcing or should be moved to `synthesis/`
-  - **INFERRED > 40% with no `sources:` in frontmatter**: flag as "unsourced synthesis" — the page is making connections but has nothing to cite
-  - **Hub pages** (top 10 by incoming wikilink count) with INFERRED > 20%: flag as "high-traffic page with questionable provenance" — errors on hub pages propagate to every page that links to them
-  - **Drift**: if the page has a `provenance:` frontmatter block, flag it when any field is more than 0.20 off from the recomputed value
-- **Skip** pages with no `provenance:` frontmatter and no markers — treated as fully extracted by convention
-
-**How to fix:**
-- For ambiguous-heavy: re-ingest from sources, resolve the uncertain claims, or split speculative content into a `synthesis/` page
-- For unsourced synthesis: add `sources:` to frontmatter or clearly label the page as synthesis
-- For hub pages with INFERRED > 20%: prioritize for re-ingestion — errors here have the widest blast radius
-- For drift: update the `provenance:` frontmatter to match the recomputed values
-
-### 8. Fragmented Tag Clusters
-
-Checks whether pages that share a tag are actually linked to each other. Tags imply a topic cluster; if those pages don't reference each other, the cluster is fragmented — knowledge islands that should be woven together.
-
-**How to check:**
-- For each tag that appears on ≥ 5 pages:
-  - `n` = count of pages with this tag
-  - `actual_links` = count of wikilinks between any two pages in this tag group (check both directions)
-  - `cohesion = actual_links / (n × (n−1) / 2)`
-- Flag any tag group where cohesion < 0.15 and n ≥ 5
-
-**How to fix:**
-- Run the `cross-linker` skill targeted at the fragmented tag — it will surface and insert the missing links
-- If a tag group is large (n > 15) and still fragmented, consider splitting it into more specific sub-tags
-
-### 9. Visibility Tag Consistency
-
-Checks that `visibility/` tags are applied correctly and aren't silently missing where they matter.
-
-**How to check:**
-
-- **Untagged PII patterns:** Grep page bodies for patterns that commonly indicate sensitive data — lines containing `password`, `api_key`, `secret`, `token`, `ssn`, `email:`, `phone:` followed by an actual value (not a field description). If a page matches and lacks `visibility/pii` or `visibility/internal`, flag it as a likely mis-classification.
-- **`visibility/pii` without `sources:`:** A page tagged `visibility/pii` should always have a `sources:` frontmatter field — if there's no provenance, there's no way to verify the classification. Flag any `visibility/pii` page missing `sources:`.
-- **Visibility tags in taxonomy:** `visibility/` tags are system tags and must **not** appear in `_meta/taxonomy.md`. If found there, flag as misconfigured — they'd be counted toward the 5-tag limit on pages that include them.
-
-**How to fix:**
-- For untagged PII patterns: add `visibility/pii` (or `visibility/internal` if it's team-context rather than personal data) to the page's frontmatter tags
-- For missing `sources:`: add provenance or escalate to the user — don't auto-fill
-- For taxonomy contamination: remove the `visibility/` entries from `_meta/taxonomy.md`
-
-### 10. Misc Promotion Candidates
-
-Find pages in `misc/` that have accumulated enough project affinity to be promoted.
-
-**How to check:**
-- Glob `$OBSIDIAN_VAULT_PATH/misc/*.md`
-- For each page, read the `affinity` frontmatter field
-- Flag pages where any single project's score ≥ 3
-
-**How to fix:**
-- Run the `cross-linker` skill first if affinity scores look stale (e.g., `affinity: {}` on a page with many wikilinks)
-- To promote: move the page to `projects/<project-name>/references/` (or another appropriate category), update its `category` frontmatter, remove `promotion_status`, and grep the vault for backlinks to update them
-
-### 12. Confidence and Lifecycle Schema
-
-Enforces the confidence + lifecycle frontmatter schema (see `llm-wiki/SKILL.md`, Confidence and Lifecycle section).
-
-Two modes:
-- **`--check`** (default, read-only) — reports errors and warnings
-- **`--fix`** — may rewrite `base_confidence` only when drift is detected (Rule 12e); never rewrites `lifecycle`
-
-#### Rule 12a — `lifecycle` enum validation
-
-**How to check:** Grep frontmatter for `^lifecycle:` across all pages. Flag any value not in `{draft, reviewed, verified, disputed, archived}`.
-
-**How to fix:** n/a (only a human should set lifecycle state)
-
-#### Rule 12b — `base_confidence` range
-
-**How to check:** Grep frontmatter for `^base_confidence:` across all pages. Flag any value outside `[0.0, 1.0]` or any page missing the field entirely.
-
-**How to fix:** n/a (wrong value means the skill computed it wrong — surface for manual correction)
-
-#### Rule 12c — Stale page report (computed overlay)
-
-Staleness is never stored — it is computed at read time: `is_stale = (today − updated) > 90 days`.
-
-**How to check:** For each page, read `updated:` from frontmatter and compute `is_stale`. If stale, also check `lifecycle:`. Report:
-- Stale pages with `lifecycle: verified` with a louder annotation (these are the most dangerous — high-trust pages that may be wrong)
-- All other stale pages as a standard warning
-
-**How to fix:** `--fix` does **not** rewrite `lifecycle`. Staleness clears automatically when a re-ingest bumps `updated`.
-
-#### Rule 12d — Supersession integrity
-
-**How to check:** For each page with `superseded_by: "[[target]]"`:
-- Verify the target page exists
-- Verify the target page is not itself `archived` (no circular or chained supersession)
-- Verify there are no cycles (A supersedes B which supersedes A)
-- Warn if `lifecycle != archived` while `superseded_by` is set (inconsistent state)
-
-**How to fix:** n/a — flag for human resolution
-
-#### Rule 12e — Confidence drift
-
-**How to check:** For pages that have both `base_confidence:` and `sources:` in frontmatter, recompute `base_confidence` using the formula in `llm-wiki/SKILL.md`. If the stored value differs from the recomputed value by more than 0.05, flag it as drift.
-
-**How to fix (`--fix` only):** Rewrite the `base_confidence` field to the recomputed value. This is the **only rule** that mutates frontmatter automatically.
-
-#### Migration timeline
-
-| Phase | When | Behavior on missing fields |
-|---|---|---|
-| Phase 1: Soft launch | Initial PR | Warning only — missing `base_confidence` or `lifecycle` on any page |
-| Phase 2: New pages enforced | +2 weeks | Error for newly created pages missing the fields; existing pages still warn even if `updated` is bumped during routine maintenance |
-| Phase 3: Full enforcement | +6 weeks, gated on a backfill script shipping in a separate PR | Error for all pages |
-
-#### Output additions
-
-Add to the Wiki Health Report:
-
-```markdown
-### Confidence/Lifecycle Issues (N found)
-- `concepts/foo.md` — missing `lifecycle` field (warning: Phase 1)
-- `entities/bar.md` — `lifecycle: stalestate` is not a valid enum value
-- `concepts/scaling.md` — `base_confidence: 1.4` is out of range [0.0, 1.0]
-- `synthesis/old-analysis.md` — STALE (last updated 2025-10-01, 182 days ago) lifecycle=verified ⚠️ HIGH PRIORITY
-- `concepts/outdated.md` — STALE (last updated 2025-11-15, 137 days ago) lifecycle=draft
-- `entities/tool-v1.md` — `superseded_by: [[entities/tool-v2]]` but lifecycle=draft (expected archived)
-- `concepts/drift-example.md` — base_confidence drift: stored=0.80, recomputed=0.59 (delta=0.21)
+```json
+{
+  "status": "completed",
+  "scope": "one-hop",
+  "findings": {
+    "contradictions": [],
+    "synthesis_gaps": []
+  },
+  "repair_recommendations": [],
+  "reviewed_candidate_ids": [],
+  "warnings": []
+}
 ```
 
-Append to the `LINT` log entry:
-```
-- [TIMESTAMP] LINT ... lifecycle_issues=N
-```
+Use the actual scope from the CLI prompt.
 
-### 11. Synthesis Gaps
+Each promoted contradiction should use this shape:
 
-Identify high-value synthesis opportunities the wiki is missing — concept pairs that co-occur across many pages but have no `synthesis/` page connecting them.
-
-**How to check:**
-- List all pages in `synthesis/` — collect the concept pairs each one already covers (from its `[[wikilinks]]` or title)
-- Pick 10-15 frequently linked concepts from `concepts/` and `entities/`
-- For each pair, run a quick grep to count pages that link to both:
-  ```bash
-  grep -rl "\[\[ConceptA\]\]" "$OBSIDIAN_VAULT_PATH" --include="*.md" > /tmp/a.txt
-  grep -rl "\[\[ConceptB\]\]" "$OBSIDIAN_VAULT_PATH" --include="*.md" > /tmp/b.txt
-  comm -12 <(sort /tmp/a.txt) <(sort /tmp/b.txt) | wc -l
-  ```
-- Flag pairs with co-occurrence ≥ 3 that have no existing synthesis page
-
-**How to fix:**
-- Run `/wiki-synthesize` to automatically discover and fill the top gaps
-
-## Output Format
-
-Report findings as a structured list:
-
-```markdown
-## Wiki Health Report
-
-### Orphaned Pages (N found)
-- `concepts/foo.md` — no incoming links
-
-### Broken Wikilinks (N found)
-- `entities/bar.md:15` — links to [[nonexistent-page]]
-
-### Missing Frontmatter (N found)
-- `skills/baz.md` — missing: tags, sources
-
-### Stale Content (N found)
-- `references/paper-x.md` — source modified 2024-03-10, page last updated 2024-01-05
-
-### Contradictions (N found)
-- `concepts/scaling.md` claims "X" but `synthesis/efficiency.md` claims "not X"
-
-### Index Issues (N found)
-- `concepts/new-page.md` exists on disk but not in index.md
-
-### Missing Summary (N found — soft)
-- `concepts/foo.md` — no `summary:` field
-- `entities/bar.md` — summary exceeds 200 chars
-
-### Provenance Issues (N found)
-- `concepts/scaling.md` — AMBIGUOUS > 15%: 22% of claims are ambiguous (re-source or move to synthesis/)
-- `entities/some-tool.md` — drift: frontmatter says inferred=0.10, recomputed=0.45
-- `concepts/transformers.md` — hub page (31 incoming links) with INFERRED=28%: errors here propagate widely
-- `synthesis/speculation.md` — unsourced synthesis: no `sources:` field, 55% inferred
-
-### Fragmented Tag Clusters (N found)
-- **#systems** — 7 pages, cohesion=0.06 ⚠️ — run cross-linker on this tag
-- **#databases** — 5 pages, cohesion=0.10 ⚠️
-
-### Visibility Issues (N found)
-- `entities/user-records.md` — contains `email:` value pattern but no `visibility/pii` tag
-- `concepts/auth-flow.md` — tagged `visibility/pii` but missing `sources:` frontmatter
-- `_meta/taxonomy.md` — contains `visibility/internal` entry (system tag must not be in taxonomy)
-
-### Misc Promotion Candidates (N found)
-Pages in misc/ that have ≥ 3 connections to a single project and are ready to be promoted:
-
-| Page | Top Project | Affinity Score |
-|---|---|---|
-| `misc/web-martinfowler-articles-microservices.md` | `obsidian-wiki` | 4 |
-
-### Synthesis Gaps (N found)
-Concept pairs that co-occur frequently but have no synthesis page:
-
-| Pair | Co-occurrence | Suggested Action |
-|---|---|---|
-| [[Caching]] × [[Consistency]] | 5 pages | Run `/wiki-synthesize` |
-| [[Testing]] × [[Observability]] | 3 pages | Run `/wiki-synthesize` |
+```json
+{
+  "candidate_id": "contradiction-1",
+  "pages": ["concepts/a.md", "synthesis/b.md"],
+  "explanation": "The pages make incompatible claims about ...",
+  "evidence": [
+    {"page": "concepts/a.md", "summary": "Claims ..."},
+    {"page": "synthesis/b.md", "summary": "Claims ..."}
+  ],
+  "confidence": "high"
+}
 ```
 
-## After Linting
+Each promoted synthesis gap should use this shape:
 
-Append to `log.md`:
-```
-- [TIMESTAMP] LINT issues_found=N orphans=X broken_links=Y stale=Z contradictions=W prov_issues=P missing_summary=S fragmented_clusters=F visibility_issues=V promotion_candidates=C synthesis_gaps=G
+```json
+{
+  "candidate_id": "synthesis-gap-1",
+  "pair": ["concepts/a.md", "entities/b.md"],
+  "explanation": "A synthesis page would add ...",
+  "evidence_pages": ["projects/x/x.md", "references/y.md"],
+  "suggested_title": "A × B",
+  "confidence": "medium"
+}
 ```
 
-Offer to fix issues automatically or let the user decide which to address.
+`confidence` must be one of `high`, `medium`, or `low`.
+
+`reviewed_candidate_ids` must include every candidate id you inspected, including candidates you declined to promote.
+
+Put non-fatal issues in `warnings`, such as unreadable pages, ambiguous candidate evidence, or scope limits that prevented review.
+
+## Hard Constraints
+
+- Do not mutate the deterministic packet.
+- Do not write anything except `semantic_review.json`.
+- Do not append to `log.md`; the CLI does that.
+- Do not duplicate deterministic hard findings into semantic findings.
+- Do not fabricate evidence. If the page text does not support promotion, leave the candidate unpromoted and optionally add a warning.

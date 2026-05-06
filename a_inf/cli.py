@@ -170,6 +170,23 @@ def build_parser() -> argparse.ArgumentParser:
                 action="store_true",
                 help="Alias for --mode raw.",
             )
+        if name == "lint":
+            cmd.add_argument(
+                "--json",
+                action="store_true",
+                help="Print the final lint health packet as JSON instead of Markdown.",
+            )
+            cmd.add_argument(
+                "--semantic-scope",
+                choices=["one-hop", "broad"],
+                default="one-hop",
+                help="How much vault context Codex may read during semantic review. Default: one-hop.",
+            )
+            cmd.add_argument(
+                "--no-log",
+                action="store_true",
+                help="Do not append the default LINT entry to log.md.",
+            )
         cmd.add_argument("args", nargs="*", help="Arguments passed to the workflow.")
         add_dispatch_options(cmd)
         cmd.set_defaults(func=cmd_dispatch, alias=name)
@@ -279,6 +296,11 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
 
         vault = find_vault_root(Path.cwd())
         return run_query(args, vault, load_wiki_config(vault))
+    elif alias == "lint":
+        from a_inf.lint import run_lint
+
+        vault = find_vault_root(Path.cwd())
+        return run_lint(args, vault, load_wiki_config(vault))
     else:
         skill = SKILL_ALIASES[alias]
     dispatch = build_dispatch(skill, args.args)
