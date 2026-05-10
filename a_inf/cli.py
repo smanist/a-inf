@@ -28,6 +28,7 @@ VAULT_DIRS = [
     "synthesis",
     "journal",
     "projects",
+    "ideas",
     "_archives",
     "_raw",
     "_meta",
@@ -51,6 +52,7 @@ SKILL_ALIASES = {
     "colorize": "wiki-colorize",
     "fixlink": "wiki-fixlink",
     "tags": "wiki-tags",
+    "ideate": "wiki-ideate",
 }
 
 QMD_SYNC_SKILLS = {
@@ -147,6 +149,7 @@ def build_parser() -> argparse.ArgumentParser:
         "colorize",
         "fixlink",
         "tags",
+        "ideate",
     ]:
         cmd = sub.add_parser(name, help=f"Run the {SKILL_ALIASES[name]} workflow.")
         if name == "ingest":
@@ -316,6 +319,18 @@ def build_parser() -> argparse.ArgumentParser:
                 action="store_true",
                 help="Do not append WIKI_INSIGHTS to log.md.",
             )
+        if name == "ideate":
+            cmd.add_argument(
+                "--entry",
+                action="append",
+                default=[],
+                help="Relevant wiki page path, title, stem, or wikilink-ish name. Repeat for multiple entries.",
+            )
+            cmd.add_argument(
+                "--json",
+                action="store_true",
+                help="Print the final ideation report as JSON instead of Markdown.",
+            )
         cmd.add_argument("args", nargs="*", help="Arguments passed to the workflow.")
         add_dispatch_options(cmd)
         cmd.set_defaults(func=cmd_dispatch, alias=name)
@@ -463,6 +478,11 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
 
         vault = find_vault_root(Path.cwd())
         return run_dashboard(args, vault, load_wiki_config(vault))
+    elif alias == "ideate":
+        from a_inf.ideate import run_ideate
+
+        vault = find_vault_root(Path.cwd())
+        return run_ideate(args, vault, load_wiki_config(vault))
     else:
         skill = SKILL_ALIASES[alias]
     dispatch = build_dispatch(skill, args.args)

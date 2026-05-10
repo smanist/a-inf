@@ -39,6 +39,7 @@ def test_init_creates_vault_structure_and_local_skill_links(tmp_path: Path, monk
         "synthesis",
         "journal",
         "projects",
+        "ideas",
         "_archives",
         "_raw",
         "_meta",

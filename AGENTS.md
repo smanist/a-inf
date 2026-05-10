@@ -33,6 +33,7 @@ $OBSIDIAN_VAULT_PATH/
 ├── references/             # Factual lookups — specs, APIs, configs
 ├── synthesis/              # Cross-cutting analysis connecting multiple concepts
 ├── journal/                # Time-bound entries — daily logs, session notes
+├── ideas/                  # Agent handoff idea packets tagged a-inf, ignored by the graph
 └── projects/
     └── <project-name>.md   # One page per project synced via wiki-update
 ```
@@ -64,6 +65,7 @@ Prefer CLI commands for user-facing workflows. Bundled skills live in `.skills/<
 | "research X" | `a-inf research X` | `wiki-research` |
 | "create a dashboard" | `a-inf dashboard` | `wiki-dashboard` |
 | "synthesize my wiki" | `a-inf synthesize` | `wiki-synthesize` |
+| "devise an idea" / "make an idea packet" | `a-inf ideate "<idea>"` | `wiki-ideate` |
 
 ## Cross-Project Usage
 
