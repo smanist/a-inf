@@ -282,13 +282,18 @@ def qmd_query_args(config: dict[str, str], vault: Path, idea: str) -> list[str]:
         "10",
         "-c",
         collection_name_for_vault(vault, config),
-        f"lex: {lex_query(idea)}\nvec: {idea}",
+        f"lex: {lex_query(idea)}\nvec: {vec_query(idea)}",
     ]
 
 
 def lex_query(value: str) -> str:
     terms = re.findall(r"[A-Za-z0-9][A-Za-z0-9_-]*", value.lower())
     return " ".join(terms[:8]) or value
+
+
+def vec_query(value: str) -> str:
+    # QMD treats "-term" as lexical negation even inside vec/hyde lines.
+    return re.sub(r"(?<=\w)-(?=\w)", " ", value).strip()
 
 
 def normalize_qmd_path(value: str, collection: str) -> str:

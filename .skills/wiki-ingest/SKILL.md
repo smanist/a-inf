@@ -41,6 +41,7 @@ The deterministic engine supplies the run packet in the prompt:
 - `qmd_wiki_collection` and `qmd_papers_collection`: collection names for related-source discovery.
 - HTML sources may include an `html_extract` with extracted title, h1/h2/h3 headings, section-level visible-text snippets, a bounded whole-document text sample, and truncation metadata.
 - PDF sources may include `pdf_extract` from MinerU with bounded markdown, output paths, extraction metadata, warnings, and a small `content_list_sample`.
+- Sources may include an `archive` object with local-only paths under `.a-inf/sources/`. Treat this as the durable detail layer beneath compiled wiki pages; do not edit it.
 
 Python has already selected the sources. Do not re-run append/full/raw filtering and do not skip selected
 sources unless you cannot read them; if a source cannot be interpreted, include it in `sources`, leave both
@@ -54,6 +55,13 @@ page lists empty, and explain the issue in `warnings`.
 - Raw drafts: promote only the durable knowledge. A raw file may map to one or more normal wiki pages.
 
 For images and scanned PDFs, most conceptual meaning is inferred. Mark those claims with `^[inferred]`; mark unclear text, uncertain arrow direction, cropped context, or source disagreement with `^[ambiguous]`.
+
+## Math Retention
+
+Promote key math into compiled wiki pages when it is central to the source or reusable elsewhere: objective
+functions, loss definitions, recurrence equations, notation tables, assumptions, theorem statements, algorithm
+updates, and derivation sketches. Keep the wiki concise; do not copy every formula by default. Full extracted
+math remains in archive `extracted_path` when available, and the original artifact remains the authority.
 
 ## QMD Discovery
 

@@ -43,6 +43,7 @@ def test_init_creates_vault_structure_and_local_skill_links(tmp_path: Path, monk
         "_archives",
         "_raw",
         "_meta",
+        ".a-inf/sources",
         ".obsidian",
         ".agents",
         ".agents/skills",
@@ -54,6 +55,9 @@ def test_init_creates_vault_structure_and_local_skill_links(tmp_path: Path, monk
     env = (vault / ".env").read_text(encoding="utf-8")
     assert f"QMD_WIKI_COLLECTION={vault.name}" in env
     assert f"QMD_PAPERS_COLLECTION={vault.name}" in env
+    assert "A_INF_ARCHIVE_SOURCES=true" in env
+    assert "A_INF_SOURCE_ARCHIVE_DIR=.a-inf/sources" in env
+    assert "A_INF_QUERY_SOURCE_DETAIL=auto" in env
     graph = json.loads((vault / ".obsidian" / "graph.json").read_text(encoding="utf-8"))
     assert graph["search"] == "-tag:#a-inf"
     assert graph["collapse-filter"] is True

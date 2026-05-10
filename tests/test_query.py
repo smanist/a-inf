@@ -264,3 +264,190 @@ def test_print_prompt_contains_packet_without_codex(tmp_path: Path, monkeypatch,
     assert '"path": "concepts/query.md"' in output
     assert '"page": "concepts/query.md"' in output
     assert "VERIFIED but stale" in output
+
+
+def test_exact_math_query_includes_archived_source_details(tmp_path: Path, monkeypatch) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    page = write_page(
+        vault,
+        "references/paper.md",
+        title="Paper",
+        tags=["math"],
+        summary="Paper summary.",
+        body="Key source card.",
+    )
+    archive_dir = vault / ".a-inf" / "sources" / "abc-paper"
+    archive_dir.mkdir(parents=True)
+    extracted = archive_dir / "extracted.md"
+    extracted.write_text("The objective is min_x ||Ax-b||^2 with Gauss-Newton updates.", encoding="utf-8")
+    (vault / ".manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "sources": {
+                    "paper.pdf": {
+                        "source_type": "pdf",
+                        "archive_id": "abc-paper",
+                        "archive_dir": ".a-inf/sources/abc-paper",
+                        "extracted_path": ".a-inf/sources/abc-paper/extracted.md",
+                        "pages_created": ["references/paper.md"],
+                        "pages_updated": [],
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        query,
+        "run_qmd",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            ["/usr/local/bin/qmd"],
+            0,
+            stdout=json.dumps(
+                [{"file": "qmd://vault/references/paper.md", "score": 0.8, "snippet": "Paper snippet."}]
+            ),
+            stderr="",
+        ),
+    )
+
+    packet = query.build_retrieval_packet(
+        vault,
+        {"QMD_WIKI_COLLECTION": "vault"},
+        "exact equation for Gauss-Newton objective",
+        fake_qmd(vault),
+    )
+
+    assert page.is_file()
+    assert packet["source_details"][0]["extracted_path"] == ".a-inf/sources/abc-paper/extracted.md"
+    assert "min_x" in packet["source_details"][0]["snippets"][0]
+
+
+def test_normal_query_omits_source_details(tmp_path: Path, monkeypatch) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    write_page(vault, "references/paper.md", title="Paper", tags=["math"], summary="Paper summary.")
+    archive_dir = vault / ".a-inf" / "sources" / "abc-paper"
+    archive_dir.mkdir(parents=True)
+    (archive_dir / "extracted.md").write_text("Detailed source text.", encoding="utf-8")
+    (vault / ".manifest.json").write_text(
+        json.dumps(
+            {
+                "sources": {
+                    "paper.pdf": {
+                        "extracted_path": ".a-inf/sources/abc-paper/extracted.md",
+                        "pages_created": ["references/paper.md"],
+                        "pages_updated": [],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        query,
+        "run_qmd",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            ["/usr/local/bin/qmd"],
+            0,
+            stdout=json.dumps(
+                [{"file": "qmd://vault/references/paper.md", "score": 0.8, "snippet": "Paper snippet."}]
+            ),
+            stderr="",
+        ),
+    )
+
+    packet = query.build_retrieval_packet(vault, {"QMD_WIKI_COLLECTION": "vault"}, "paper summary", fake_qmd(vault))
+
+    assert packet["source_details"] == []
+
+
+def test_weak_query_retrieval_auto_includes_source_details(tmp_path: Path, monkeypatch) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    write_page(vault, "references/paper.md", title="Paper", tags=["math"], summary="Sparse.")
+    archive_dir = vault / ".a-inf" / "sources" / "abc-paper"
+    archive_dir.mkdir(parents=True)
+    (archive_dir / "extracted.md").write_text("Latent smoother objective details.", encoding="utf-8")
+    (vault / ".manifest.json").write_text(
+        json.dumps(
+            {
+                "sources": {
+                    "paper.pdf": {
+                        "extracted_path": ".a-inf/sources/abc-paper/extracted.md",
+                        "pages_created": ["references/paper.md"],
+                        "pages_updated": [],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        query,
+        "run_qmd",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            ["/usr/local/bin/qmd"],
+            0,
+            stdout=json.dumps(
+                [{"file": "qmd://vault/references/paper.md", "score": 0.05, "snippet": "Sparse."}]
+            ),
+            stderr="",
+        ),
+    )
+
+    packet = query.build_retrieval_packet(vault, {"QMD_WIKI_COLLECTION": "vault"}, "latent smoother", fake_qmd(vault))
+
+    assert packet["source_details"][0]["manifest_key"] == "paper.pdf"
+
+
+def test_filtered_query_does_not_expose_internal_source_details(tmp_path: Path, monkeypatch) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    write_page(
+        vault,
+        "references/private.md",
+        title="Private Paper",
+        tags=["math", "visibility/internal"],
+        summary="Internal paper.",
+    )
+    archive_dir = vault / ".a-inf" / "sources" / "private"
+    archive_dir.mkdir(parents=True)
+    (archive_dir / "extracted.md").write_text("Secret equation.", encoding="utf-8")
+    (vault / ".manifest.json").write_text(
+        json.dumps(
+            {
+                "sources": {
+                    "private.pdf": {
+                        "extracted_path": ".a-inf/sources/private/extracted.md",
+                        "pages_created": ["references/private.md"],
+                        "pages_updated": [],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        query,
+        "run_qmd",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            ["/usr/local/bin/qmd"],
+            0,
+            stdout=json.dumps(
+                [{"file": "qmd://vault/references/private.md", "score": 0.9, "snippet": "private"}]
+            ),
+            stderr="",
+        ),
+    )
+
+    packet = query.build_retrieval_packet(
+        vault,
+        {"QMD_WIKI_COLLECTION": "vault"},
+        "public only exact equation",
+        fake_qmd(vault),
+    )
+
+    assert packet["candidates"] == []
+    assert packet["source_details"] == []

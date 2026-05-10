@@ -19,6 +19,7 @@ The prompt contains a JSON retrieval packet with:
 - `question`, `mode`, `query_type`, `filtered`, and `index_only`
 - `hot` and `index_summary` context
 - `candidates` ranked by deterministic score, with page metadata, snippets, and reasons
+- `source_details` with bounded snippets from archived source extracts when exact detail retrieval is useful
 - `graph_context` with one-hop outgoing wikilinks for top candidates
 - `lifecycle_annotations` for stale, archived, disputed, or stale verified pages
 - `gaps` and `qmd.warnings` when retrieval was weak or failed
@@ -31,6 +32,7 @@ guidance.
 
 - Do not redo broad retrieval or search the vault unless `qmd.warnings` says retrieval failed or the packet has no candidates.
 - Cite only pages present in `candidates` or `graph_context`.
+- Use `source_details` only for exact evidence: equations, notation, derivations, quote checks, source-specific details, or weak wiki coverage. Cite the linked wiki/reference page first when available, then mention the archive extract as supporting detail.
 - If `filtered` is true, do not mention excluded pages or internal content.
 - Prefer candidate snippets and summaries over speculation.
 - For relationship queries, use `graph_context` to describe direct one-hop links when relevant.

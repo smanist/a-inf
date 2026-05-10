@@ -193,6 +193,12 @@ def fake_run_with_mineru(markdown: str, content_list: list[dict[str, object]] | 
                 json.dumps(content_list or [{"type": "text", "text": markdown, "page_idx": 0}]),
                 encoding="utf-8",
             )
+            for item in content_list or []:
+                img_path = item.get("img_path")
+                if isinstance(img_path, str):
+                    target = extract_dir / img_path
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(b"fake image")
             return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
         raise AssertionError(f"unexpected command: {command}")
 
@@ -495,6 +501,12 @@ def test_ingest_valid_plan_applies_pages_and_special_files(tmp_path: Path, monke
     manifest = json.loads((vault / ".manifest.json").read_text(encoding="utf-8"))
     assert str(source) in manifest["sources"]
     assert manifest["sources"][str(source)]["pages_created"] == ["concepts/deterministic-ingest.md"]
+    archive = manifest["sources"][str(source)]
+    assert archive["archive_dir"].startswith(".a-inf/sources/")
+    assert (vault / archive["original_path"]).read_text(encoding="utf-8") == "hybrid ingest\n"
+    assert (vault / archive["extracted_path"]).read_text(encoding="utf-8") == "hybrid ingest\n"
+    metadata = json.loads((vault / archive["archive_dir"] / "metadata.json").read_text(encoding="utf-8"))
+    assert metadata["pages"] == ["concepts/deterministic-ingest.md"]
     index = (vault / "index.md").read_text(encoding="utf-8")
     assert "[[concepts/deterministic-ingest|Deterministic Ingest]]" in index
     assert " - A deterministic shell around semantic wiki ingest." in index
@@ -538,10 +550,84 @@ def test_url_ingest_valid_plan_applies_reference_and_manifest(tmp_path: Path, mo
     assert manifest["sources"][url]["source_type"] == "url"
     assert manifest["sources"][url]["source_url"] == url
     assert manifest["sources"][url]["pages_created"] == ["references/web-example-com-article.md"]
+    assert (vault / manifest["sources"][url]["extracted_path"]).read_text(encoding="utf-8") == markdown + "\n"
+    assert "original_path" not in manifest["sources"][url]
     index = (vault / "index.md").read_text(encoding="utf-8")
     assert "[[references/web-example-com-article|Example Article]]" in index
     assert "INGEST" in (vault / "log.md").read_text(encoding="utf-8")
     assert "URL ingest uses deterministic extraction." in (vault / "hot.md").read_text(encoding="utf-8")
+
+
+def test_pdf_ingest_archives_original_extract_and_figures(tmp_path: Path, monkeypatch) -> None:
+    isolate_qmd_home(tmp_path, monkeypatch)
+    vault = make_vault(tmp_path)
+    (vault / ".env").write_text(
+        "QMD_WIKI_COLLECTION=vault\nQMD_PAPERS_COLLECTION=vault\nA_INF_PDF_EXTRACTOR=mineru\n",
+        encoding="utf-8",
+    )
+    source = vault / "_raw" / "paper.pdf"
+    source.write_bytes(b"%PDF fake test source")
+    full_markdown = "# Paper Title\n\nEquation: x^2.\n\nLate formula: y = Ax."
+    packet_markdown = "# Paper Title\n\nEquation: x^2."
+    args = IngestArgs([str(source)])
+
+    def fake_call(command: list[str], cwd: Path, env: dict[str, str] | None = None) -> int:
+        match = re.search(r"Write exactly one JSON file at this path: (.+)", command[-1])
+        assert match
+        plan_path = Path(match.group(1).strip())
+        plan_path.parent.mkdir(parents=True, exist_ok=True)
+        plan = page_plan(source, path="references/paper.md")
+        plan["sources"][0]["source_type"] = "pdf"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        return 0
+
+    monkeypatch.chdir(vault)
+    monkeypatch.setattr(ingest, "PDF_EXTRACT_MARKDOWN_MAX_CHARS", len(packet_markdown))
+    monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}" if name in {"mineru", "qmd", "codex"} else None)
+    monkeypatch.setattr(qmd_module.shutil, "which", lambda name: f"/usr/local/bin/{name}" if name in {"mineru", "qmd", "codex"} else None)
+    monkeypatch.setattr(
+        ingest.subprocess,
+        "run",
+        fake_run_with_mineru(full_markdown, [{"type": "image", "img_path": "images/fig1.png", "page_idx": 0}]),
+    )
+    monkeypatch.setattr(ingest.subprocess, "call", fake_call)
+
+    assert cli.cmd_dispatch(args) == 0
+    manifest = json.loads((vault / ".manifest.json").read_text(encoding="utf-8"))
+    archive = manifest["sources"][str(source)]
+    assert (vault / archive["original_path"]).read_bytes() == b"%PDF fake test source"
+    assert (vault / archive["extracted_path"]).read_text(encoding="utf-8") == full_markdown + "\n"
+    assert packet_markdown in (vault / archive["extracted_path"]).read_text(encoding="utf-8")
+    assert (vault / archive["figures_dir"] / "images" / "fig1.png").read_bytes() == b"fake image"
+    assert sorted(path.name for path in (vault / archive["archive_dir"]).rglob("*.pdf")) == ["original.pdf"]
+
+
+def test_archive_can_be_disabled(tmp_path: Path, monkeypatch) -> None:
+    isolate_qmd_home(tmp_path, monkeypatch)
+    vault = make_vault(tmp_path)
+    (vault / ".env").write_text("A_INF_ARCHIVE_SOURCES=false\n", encoding="utf-8")
+    source = vault / "note.md"
+    source.write_text("hybrid ingest\n", encoding="utf-8")
+    args = IngestArgs([str(source)])
+
+    def fake_call(command: list[str], cwd: Path, env: dict[str, str] | None = None) -> int:
+        match = re.search(r"Write exactly one JSON file at this path: (.+)", command[-1])
+        assert match
+        plan_path = Path(match.group(1).strip())
+        plan_path.parent.mkdir(parents=True, exist_ok=True)
+        plan_path.write_text(json.dumps(page_plan(source)), encoding="utf-8")
+        return 0
+
+    monkeypatch.chdir(vault)
+    monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(qmd_module.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(qmd_module.subprocess, "run", fake_qmd_run)
+    monkeypatch.setattr(ingest.subprocess, "call", fake_call)
+
+    assert cli.cmd_dispatch(args) == 0
+    manifest = json.loads((vault / ".manifest.json").read_text(encoding="utf-8"))
+    assert "archive_dir" not in manifest["sources"][str(source)]
+    assert not (vault / ".a-inf" / "sources").exists()
 
 
 def test_ingest_missing_qmd_fails_before_codex(tmp_path: Path, monkeypatch, capsys) -> None:

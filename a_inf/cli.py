@@ -32,6 +32,7 @@ VAULT_DIRS = [
     "_archives",
     "_raw",
     "_meta",
+    ".a-inf/sources",
     ".obsidian",
     str(LOCAL_SKILLS_DIR),
 ]
@@ -665,6 +666,9 @@ def build_status_report(vault: Path) -> str:
     total_ingested = int(stats.get("total_sources_ingested") or len(source_entries))
     total_projects = int(stats.get("total_projects") or len(projects))
     last_ingest = latest_ingest_time(manifest)
+    archived_sources = sum(
+        1 for entry in source_entries.values() if isinstance(entry, dict) and entry.get("archive_dir")
+    )
 
     new = [delta for delta in deltas if delta.status == "new"]
     modified = [delta for delta in deltas if delta.status == "modified"]
@@ -697,6 +701,7 @@ def build_status_report(vault: Path) -> str:
     lines.extend(
         [
             f"- **Total sources ingested:** {total_ingested}",
+            f"- **Archived source detail layers:** {archived_sources}",
             f"- **Projects tracked:** {total_projects}",
             f"- **Last ingest:** {last_ingest or 'never'}",
             f"- **Configured document sources:** {format_configured_paths(config.get('OBSIDIAN_SOURCES_DIR'))}",
@@ -1328,6 +1333,9 @@ OBSIDIAN_LINK_FORMAT=wikilink
 OBSIDIAN_RAW_DIR=_raw
 QMD_WIKI_COLLECTION={vault.name}
 QMD_PAPERS_COLLECTION={vault.name}
+A_INF_ARCHIVE_SOURCES=true
+A_INF_SOURCE_ARCHIVE_DIR=.a-inf/sources
+A_INF_QUERY_SOURCE_DETAIL=auto
 """
 
 

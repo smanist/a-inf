@@ -37,6 +37,7 @@ a-inf init /path/to/repo
 Initialization creates:
 
 - `.a-inf/config.toml`
+- `.a-inf/sources/` as the local-only source archive, populated during ingest
 - `.env` compatibility config
 - `.gitignore` entries for local config
 - `.manifest.json`
@@ -47,7 +48,7 @@ Initialization creates:
 - `.agents/skills/<skill-name>` symlinks to this checkout's bundled skills
 - an `a-inf` section in `AGENTS.md`, unless `--no-agents` is passed
 
-The generated `.env` defaults `QMD_WIKI_COLLECTION` and `QMD_PAPERS_COLLECTION` to the initialized repo directory name. Init also creates that QMD collection and runs the first `qmd update` / `qmd embed`.
+The generated `.env` defaults `QMD_WIKI_COLLECTION` and `QMD_PAPERS_COLLECTION` to the initialized repo directory name, enables source archiving under `.a-inf/sources/`, and sets source-detail query retrieval to `auto`. Init also creates that QMD collection and runs the first `qmd update` / `qmd embed`.
 
 Use `--copy-skills` if symlinks are not appropriate:
 

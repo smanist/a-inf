@@ -22,6 +22,7 @@ $OBSIDIAN_VAULT_PATH/
 ├── log.md                  # Chronological activity log (ingests, updates, lints)
 ├── hot.md                  # Session hot cache — ~500-word semantic snapshot of recent activity
 ├── .manifest.json          # Tracks every ingested source: path, timestamps, pages produced
+├── .a-inf/sources/         # Local-only source archive: originals, extracted text, figures, metadata
 ├── _meta/
 │   ├── taxonomy.md         # Controlled tag vocabulary
 │   └── *.base              # Obsidian Bases dashboard definitions (wiki-dashboard skill)
@@ -30,7 +31,7 @@ $OBSIDIAN_VAULT_PATH/
 ├── concepts/               # Abstract ideas, patterns, mental models
 ├── entities/               # Concrete things — people, tools, libraries, companies
 ├── skills/                 # How-to knowledge, techniques, procedures
-├── references/             # Factual lookups — specs, APIs, configs
+├── references/             # Source cards and summaries — not full copies of original material
 ├── synthesis/              # Cross-cutting analysis connecting multiple concepts
 ├── journal/                # Time-bound entries — daily logs, session notes
 ├── ideas/                  # Agent handoff idea packets tagged a-inf, ignored by the graph

@@ -118,6 +118,7 @@ def test_status_command_reports_delta_without_codex(
                 "content_hash": digest,
                 "size_bytes": source.stat().st_size,
                 "source_type": "document",
+                "archive_dir": ".a-inf/sources/example",
             }
         },
         "projects": {},
@@ -134,6 +135,7 @@ def test_status_command_reports_delta_without_codex(
     assert result == 0
     output = capsys.readouterr().out
     assert "# Wiki Status" in output
+    assert "**Archived source detail layers:** 1" in output
     assert "**Ready to ingest:** 0 new + 0 modified = 0 sources" in output
     assert "**Recommendation:** No action" in output
 

@@ -113,6 +113,15 @@ def test_qmd_failure_continues_with_thin_context(tmp_path: Path, monkeypatch, ca
     assert "ideation skipped by --no-codex" in output
 
 
+def test_qmd_vec_query_normalizes_hyphenated_terms(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+
+    query = ideate.qmd_query_args({}, vault, "weak-form continuous-time learning")[-1]
+
+    assert "lex: weak-form continuous-time learning" in query
+    assert "vec: weak form continuous time learning" in query
+
+
 def test_unique_output_path_uses_suffix(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     (vault / "ideas").mkdir()

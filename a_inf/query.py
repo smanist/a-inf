@@ -33,6 +33,27 @@ FILTERED_MODE_TRIGGERS = [
 INDEX_ONLY_TRIGGERS = ["quick answer", "just scan", "don't read the pages", "fast lookup"]
 BLOCKED_VISIBILITY_TAGS = {"visibility/internal", "visibility/pii"}
 WIKILINK_RE = re.compile(r"\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]")
+SOURCE_DETAIL_TRIGGERS = {
+    "algorithm",
+    "derivation",
+    "detail",
+    "details",
+    "equation",
+    "equations",
+    "exact",
+    "formula",
+    "formulas",
+    "loss",
+    "math",
+    "notation",
+    "objective",
+    "original",
+    "proof",
+    "quote",
+    "source",
+}
+SOURCE_DETAIL_MAX_CHARS = 200_000
+SOURCE_DETAIL_SNIPPET_CHARS = 900
 
 
 @dataclass(frozen=True)
@@ -139,6 +160,14 @@ def build_retrieval_packet(vault: Path, config: dict[str, str], question: str, q
     top_candidates = candidates[:10]
     graph_context = build_graph_context(vault, allowed_pages, top_candidates[:5])
     cited_paths = [candidate.page.path for candidate in top_candidates]
+    source_details = build_source_detail_context(
+        vault,
+        config,
+        question,
+        allowed_pages,
+        top_candidates,
+        warnings,
+    )
 
     return {
         "question": question,
@@ -155,6 +184,7 @@ def build_retrieval_packet(vault: Path, config: dict[str, str], question: str, q
         "hot": trim_text(hot_text, 1200),
         "index_summary": trim_text(index_text, 2200),
         "candidates": [candidate_to_packet(candidate, vault) for candidate in top_candidates],
+        "source_details": source_details,
         "graph_context": graph_context,
         "lifecycle_annotations": {
             path: annotation
@@ -180,6 +210,31 @@ def classify_query(question: str) -> QueryModes:
         index_only=any(trigger in lowered for trigger in INDEX_ONLY_TRIGGERS),
         filtered=any(trigger in lowered for trigger in FILTERED_MODE_TRIGGERS),
     )
+
+
+def source_detail_mode(config: dict[str, str]) -> str:
+    mode = (os.environ.get("A_INF_QUERY_SOURCE_DETAIL") or config.get("A_INF_QUERY_SOURCE_DETAIL") or "auto").lower()
+    return mode if mode in {"auto", "explicit", "always", "off"} else "auto"
+
+
+def should_include_source_details(
+    config: dict[str, str],
+    question: str,
+    candidates: list[Candidate],
+    warnings: list[str],
+) -> bool:
+    mode = source_detail_mode(config)
+    if mode == "off":
+        return False
+    if mode == "always":
+        return True
+    terms = set(query_terms(question))
+    explicit = bool(terms & SOURCE_DETAIL_TRIGGERS)
+    if mode == "explicit":
+        return explicit
+    if explicit or warnings or not candidates:
+        return True
+    return bool(candidates and candidates[0].score < 15)
 
 
 def build_page_registry(vault: Path, index_text: str = "") -> dict[str, PageInfo]:
@@ -383,6 +438,113 @@ def build_graph_context(
     return context
 
 
+def build_source_detail_context(
+    vault: Path,
+    config: dict[str, str],
+    question: str,
+    allowed_pages: dict[str, PageInfo],
+    candidates: list[Candidate],
+    warnings: list[str],
+) -> list[dict[str, Any]]:
+    if not should_include_source_details(config, question, candidates, warnings):
+        return []
+    manifest = read_manifest(vault)
+    sources = manifest.get("sources", {})
+    if not isinstance(sources, dict):
+        return []
+    candidate_paths = {candidate.page.path for candidate in candidates[:5]}
+    terms = query_terms(question)
+    details: list[dict[str, Any]] = []
+    for manifest_key, raw_entry in sources.items():
+        if not isinstance(raw_entry, dict):
+            continue
+        pages = source_entry_pages(raw_entry)
+        allowed_entry_pages = [page for page in pages if page in allowed_pages]
+        if not allowed_entry_pages:
+            continue
+        if candidate_paths and not (candidate_paths & set(allowed_entry_pages)) and source_detail_mode(config) != "always":
+            if not (set(terms) & SOURCE_DETAIL_TRIGGERS):
+                continue
+        extracted = raw_entry.get("extracted_path")
+        if not isinstance(extracted, str) or not extracted:
+            continue
+        path = resolve_vault_path(vault, extracted)
+        text = read_text_if_exists(path)[:SOURCE_DETAIL_MAX_CHARS]
+        if not text.strip():
+            continue
+        text_terms = [term for term in terms if term not in SOURCE_DETAIL_TRIGGERS]
+        if candidate_paths and not (candidate_paths & set(allowed_entry_pages)):
+            if not text_terms:
+                continue
+            normalized_text = normalize_text(text)
+            if not any(term in normalized_text for term in text_terms):
+                continue
+        snippets = source_detail_snippets(text, terms)
+        score = source_detail_score(text, terms, allowed_entry_pages, candidate_paths)
+        if score <= 0 and source_detail_mode(config) != "always":
+            continue
+        details.append(
+            {
+                "manifest_key": str(manifest_key),
+                "source_type": str(raw_entry.get("source_type") or ""),
+                "source_url": str(raw_entry.get("source_url") or ""),
+                "archive_id": str(raw_entry.get("archive_id") or ""),
+                "extracted_path": extracted,
+                "original_path": str(raw_entry.get("original_path") or ""),
+                "reference_pages": [page for page in allowed_entry_pages if page.startswith("references/")],
+                "pages": allowed_entry_pages,
+                "score": score,
+                "snippets": snippets,
+            }
+        )
+    details.sort(key=lambda item: (-float(item["score"]), str(item["manifest_key"])))
+    return details[:5]
+
+
+def source_entry_pages(entry: dict[str, Any]) -> list[str]:
+    pages: list[str] = []
+    for key in ["pages_created", "pages_updated"]:
+        value = entry.get(key)
+        if isinstance(value, list):
+            pages.extend(str(item) for item in value if str(item))
+    return list(dict.fromkeys(pages))
+
+
+def resolve_vault_path(vault: Path, value: str) -> Path:
+    path = Path(value).expanduser()
+    return path if path.is_absolute() else vault / path
+
+
+def source_detail_score(text: str, terms: list[str], pages: list[str], candidate_paths: set[str]) -> float:
+    normalized = normalize_text(text)
+    score = 4.0 if candidate_paths & set(pages) else 1.0
+    for term in terms:
+        if term in SOURCE_DETAIL_TRIGGERS:
+            score += 2.0
+            continue
+        score += min(normalized.count(term), 5)
+    return score
+
+
+def source_detail_snippets(text: str, terms: list[str]) -> list[str]:
+    normalized = normalize_text(text)
+    snippets: list[str] = []
+    for term in terms:
+        if term in SOURCE_DETAIL_TRIGGERS:
+            continue
+        index = normalized.find(term)
+        if index < 0:
+            continue
+        start = max(0, index - SOURCE_DETAIL_SNIPPET_CHARS // 2)
+        end = min(len(text), index + SOURCE_DETAIL_SNIPPET_CHARS // 2)
+        snippets.append(trim_text(text[start:end], SOURCE_DETAIL_SNIPPET_CHARS))
+        if len(snippets) >= 2:
+            break
+    if not snippets:
+        snippets.append(trim_text(text, SOURCE_DETAIL_SNIPPET_CHARS))
+    return snippets
+
+
 def resolve_outgoing_links(
     text: str,
     pages: dict[str, PageInfo],
@@ -467,6 +629,7 @@ def build_query_prompt(vault: Path, question: str, packet: dict[str, Any]) -> st
         "Rules:\n"
         "- Do not redo broad retrieval or search the vault unless `qmd.warnings` says retrieval failed or the packet has no candidates.\n"
         "- Cite only pages present in `candidates` or `graph_context`.\n"
+        "- Use `source_details` only for exact source evidence, quotes, equations, notation, derivations, or weak wiki coverage; cite the linked wiki/reference page first when available.\n"
         "- Apply `lifecycle_annotations` inline for cited pages when present.\n"
         "- If `filtered` is true, do not mention excluded pages or internal content.\n"
         "- Mention gaps from the packet when relevant.\n"
@@ -568,6 +731,22 @@ def read_text_if_exists(path: Path) -> str:
         return path.read_text(encoding="utf-8") if path.exists() else ""
     except UnicodeDecodeError:
         return ""
+
+
+def read_manifest(vault: Path) -> dict[str, Any]:
+    path = vault / ".manifest.json"
+    if not path.exists():
+        return {"version": 1, "sources": {}, "projects": {}, "stats": {}}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {"version": 1, "sources": {}, "projects": {}, "stats": {}}
+    if not isinstance(data, dict):
+        return {"version": 1, "sources": {}, "projects": {}, "stats": {}}
+    data.setdefault("sources", {})
+    data.setdefault("projects", {})
+    data.setdefault("stats", {})
+    return data
 
 
 def trim_text(value: str, max_chars: int) -> str:
