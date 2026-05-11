@@ -54,6 +54,12 @@ page lists empty, and explain the issue in `warnings`.
 - Images: transcribe visible text exactly where possible; describe diagrams, screens, arrows, nodes, and ambiguous handwriting. Interpretation beyond visible text is inferred.
 - Raw drafts: promote only the durable knowledge. A raw file may map to one or more normal wiki pages.
 
+When sources are not in English, preserve extracted source artifacts and archive references in the original
+language, but write generated wiki page titles, summaries, tags, links, and body prose in English. Translate
+durable knowledge during this semantic planning step, not during deterministic extraction or after the CLI
+applies the plan. Keep original titles, quoted terms, names, and domain vocabulary when they are useful, adding
+an English gloss where needed.
+
 For images and scanned PDFs, most conceptual meaning is inferred. Mark those claims with `^[inferred]`; mark unclear text, uncertain arrow direction, cropped context, or source disagreement with `^[ambiguous]`.
 
 ## Math Retention
