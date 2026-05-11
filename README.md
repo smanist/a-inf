@@ -39,8 +39,7 @@ a-inf ingest paper-xx --print-prompt
 ```text
 repo/
 ├── .a-inf/
-│   ├── config.toml
-│   └── sources/             # local-only archived originals and extracted detail text
+│   └── config.toml
 ├── .env
 ├── .gitignore
 ├── .manifest.json
@@ -51,6 +50,7 @@ repo/
 ├── _meta/
 │   └── taxonomy.md
 ├── _raw/
+├── _sources/                # local-only archived originals and extracted detail text
 ├── .obsidian/
 ├── .agents/
 │   └── skills/              # symlinks to bundled workflow skills
@@ -65,7 +65,7 @@ repo/
 ```
 
 If `AGENTS.md` already exists, `a-inf init` appends a small marked `a-inf` section instead of replacing the file. Pass `--no-agents` to skip that. Pass `--no-gitignore` to leave `.gitignore` untouched.
-`_raw/` is staging for drafts waiting to be promoted; `.a-inf/sources/` is the local immutable archive layer used for exact source details. `references/` pages remain source cards and summaries, not full copies of original material.
+`_raw/` is staging for drafts waiting to be promoted; `_sources/` is the local immutable archive layer used for exact source details. `references/` pages remain source cards and summaries, not full copies of original material.
 
 ## Commands
 
@@ -136,7 +136,7 @@ Optional environment variables from `.env.example` still apply for skill workflo
 - `QMD_WIKI_COLLECTION`
 - `QMD_PAPERS_COLLECTION`
 - `A_INF_ARCHIVE_SOURCES` (`true` by default)
-- `A_INF_SOURCE_ARCHIVE_DIR` (`.a-inf/sources` by default)
+- `A_INF_SOURCE_ARCHIVE_DIR` (`_sources` by default)
 - `A_INF_QUERY_SOURCE_DETAIL` (`auto`, `explicit`, `always`, or `off`)
 - `A_INF_PDF_EXTRACTOR` (`auto`, `mineru`, or `none`)
 - `A_INF_MINERU_BIN`

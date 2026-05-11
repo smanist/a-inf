@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import base64
 from pathlib import Path
 
 from a_inf import cli, ingest
@@ -33,6 +34,29 @@ def fake_qmd_run(command: list[str], **_kwargs: object) -> subprocess.CompletedP
     if command[1:] in (["update"], ["embed"]):
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
     raise AssertionError(f"unexpected qmd command: {command}")
+
+
+def plan_path_from_prompt(prompt: str) -> Path:
+    match = re.search(r"Write exactly one JSON file at this path: (.+)", prompt)
+    assert match
+    return Path(match.group(1).strip())
+
+
+def test_call_codex_exec_passes_prompt_on_stdin(tmp_path: Path, monkeypatch) -> None:
+    seen: dict[str, object] = {}
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        seen["command"] = command
+        seen["kwargs"] = kwargs
+        return subprocess.CompletedProcess(command, 17, stdout="", stderr="")
+
+    monkeypatch.setattr(ingest.subprocess, "run", fake_run)
+
+    result = ingest.call_codex_exec(["/usr/local/bin/codex", "exec"], "large prompt", cwd=tmp_path, env={"A": "B"})
+
+    assert result == 17
+    assert seen["command"] == ["/usr/local/bin/codex", "exec", "-"]
+    assert seen["kwargs"] == {"cwd": tmp_path, "env": {"A": "B"}, "input": "large prompt", "text": True, "check": False}
 
 
 def isolate_qmd_home(tmp_path: Path, monkeypatch) -> None:
@@ -106,8 +130,9 @@ def url_plan(
     *,
     action: str = "create",
     path: str = "references/web-example-com-article.md",
+    content_hash: str | None = None,
 ) -> dict[str, object]:
-    digest = ingest.hash_bytes(markdown.encode("utf-8"))
+    digest = content_hash or ingest.hash_bytes(markdown.encode("utf-8"))
     now = "2026-05-05T12:00:00+00:00"
     return {
         "version": 1,
@@ -172,6 +197,13 @@ def fake_run_with_defuddle(markdown: str) -> object:
     return fake_run
 
 
+def fake_fetch_url_html(html: str) -> object:
+    def fake_fetch(_url: str) -> bytes:
+        return html.encode("utf-8")
+
+    return fake_fetch
+
+
 def fake_run_with_mineru(markdown: str, content_list: list[dict[str, object]] | None = None) -> object:
     def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         if command[-1] == "--version" and Path(command[0]).name == "qmd":
@@ -223,7 +255,7 @@ def test_ingest_print_prompt_emits_packet_without_writes(tmp_path: Path, monkeyp
     monkeypatch.chdir(vault)
     monkeypatch.setattr(qmd_module.shutil, "which", lambda name: "/usr/local/bin/qmd" if name == "qmd" else None)
     monkeypatch.setattr(qmd_module.subprocess, "run", fake_qmd_run)
-    monkeypatch.setattr(subprocess, "call", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("codex called")))
+    monkeypatch.setattr(ingest, "call_codex_exec", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("codex called")))
 
     assert cli.cmd_dispatch(args) == 0
     packet = json.loads(capsys.readouterr().out)
@@ -305,25 +337,31 @@ def test_html_extract_captures_later_sections() -> None:
     assert "Important late detail." in late["text"]
 
 
-def test_html_extract_is_added_to_source_packet(tmp_path: Path, monkeypatch, capsys) -> None:
+def test_local_html_uses_defuddle_markdown_and_embedded_figures(tmp_path: Path, monkeypatch, capsys) -> None:
     isolate_qmd_home(tmp_path, monkeypatch)
     vault = make_vault(tmp_path)
     source = vault / "_raw" / "adj.html"
-    source.write_text("<html><head><title>Adjuster</title></head><body><h1>Claim</h1><p>Notes</p></body></html>", encoding="utf-8")
+    image = base64.b64encode(b"fake png").decode("ascii")
+    source.write_text(
+        f'<html><body><h1>Claim</h1><img alt="plot" src="data:image/png;base64,{image}"><p>Notes</p></body></html>',
+        encoding="utf-8",
+    )
     args = IngestArgs([str(source)])
     args.print_prompt = True
 
     monkeypatch.chdir(vault)
-    monkeypatch.setattr(qmd_module.shutil, "which", lambda name: "/usr/local/bin/qmd" if name == "qmd" else None)
-    monkeypatch.setattr(qmd_module.subprocess, "run", fake_qmd_run)
+    monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}" if name in {"defuddle", "qmd"} else None)
+    monkeypatch.setattr(qmd_module.shutil, "which", lambda name: f"/usr/local/bin/{name}" if name in {"defuddle", "qmd"} else None)
+    monkeypatch.setattr(ingest.subprocess, "run", fake_run_with_defuddle("# Claim\n\n![plot](_sources/archive/figures/figure-001.png)\n\nNotes"))
 
     assert cli.cmd_dispatch(args) == 0
     packet = json.loads(capsys.readouterr().out)
-    extract = packet["sources"][0]["html_extract"]
-    assert extract["title"] == "Adjuster"
-    assert extract["headings"] == [{"tag": "h1", "text": "Claim"}]
-    assert "Notes" in extract["sections"][0]["text"]
-    assert "html_preview" not in packet["sources"][0]
+    packet_source = packet["sources"][0]
+    assert packet_source["html_markdown"].startswith("# Claim")
+    assert "data:image" not in packet_source["html_markdown"]
+    assert packet_source["embedded_figures"][0]["mime_type"] == "image/png"
+    assert packet_source["embedded_figures"][0]["size_bytes"] == len(b"fake png")
+    assert "html_extract" not in packet_source
 
 
 def test_url_source_packet_uses_defuddle_markdown(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -338,8 +376,9 @@ def test_url_source_packet_uses_defuddle_markdown(tmp_path: Path, monkeypatch, c
     monkeypatch.chdir(vault)
     monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}" if name in {"defuddle", "qmd"} else None)
     monkeypatch.setattr(qmd_module.shutil, "which", lambda name: f"/usr/local/bin/{name}" if name in {"defuddle", "qmd"} else None)
+    monkeypatch.setattr(ingest, "fetch_url_html", fake_fetch_url_html(markdown))
     monkeypatch.setattr(ingest.subprocess, "run", fake_run_with_defuddle(markdown))
-    monkeypatch.setattr(ingest.subprocess, "call", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("codex called")))
+    monkeypatch.setattr(ingest, "call_codex_exec", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("codex called")))
 
     assert cli.cmd_dispatch(args) == 0
     packet = json.loads(capsys.readouterr().out)
@@ -349,11 +388,78 @@ def test_url_source_packet_uses_defuddle_markdown(tmp_path: Path, monkeypatch, c
     assert source["manifest_key"] == url
     assert source["source_type"] == "url"
     assert source["source_url"] == url
-    assert source["url_markdown"] == markdown
+    assert source["html_markdown"] == markdown
     assert source["target_path"] == "references/web-example-com-article.md"
     assert source["content_hash"] == ingest.hash_bytes(markdown.encode("utf-8"))
-    assert "url_markdown" in packet["codex_prompt"]
+    assert "html_markdown" in packet["codex_prompt"]
     assert not (vault / ".a-inf" / "runs").exists()
+
+
+def test_url_source_packet_extracts_embedded_figures(tmp_path: Path, monkeypatch, capsys) -> None:
+    isolate_qmd_home(tmp_path, monkeypatch)
+    vault = make_vault(tmp_path)
+    url = "https://example.com/slides.html"
+    image = base64.b64encode(b"fake png").decode("ascii")
+    html = f'<html><body><img src="data:image/png;base64,{image}"><img src="data:image/png;base64,{image}"></body></html>'
+    markdown = "# Slides\n\n![](_sources/archive/figures/figure-001.png)"
+    args = IngestArgs([url])
+    args.print_prompt = True
+
+    monkeypatch.chdir(vault)
+    monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}" if name in {"defuddle", "qmd"} else None)
+    monkeypatch.setattr(qmd_module.shutil, "which", lambda name: f"/usr/local/bin/{name}" if name in {"defuddle", "qmd"} else None)
+    monkeypatch.setattr(ingest, "fetch_url_html", fake_fetch_url_html(html))
+    monkeypatch.setattr(ingest.subprocess, "run", fake_run_with_defuddle(markdown))
+
+    assert cli.cmd_dispatch(args) == 0
+    packet = json.loads(capsys.readouterr().out)
+    source = packet["sources"][0]
+    assert source["html_markdown"] == markdown
+    assert "data:image" not in source["html_markdown"]
+    assert len(source["embedded_figures"]) == 1
+    assert source["embedded_figures"][0]["filename"] == "figure-001.png"
+
+
+def test_url_source_packet_warns_on_invalid_embedded_figure(tmp_path: Path, monkeypatch, capsys) -> None:
+    isolate_qmd_home(tmp_path, monkeypatch)
+    vault = make_vault(tmp_path)
+    url = "https://example.com/bad-figure.html"
+    html = '<html><body><img src="data:image/png;base64,%%%"></body></html>'
+    markdown = "# Bad Figure"
+    args = IngestArgs([url])
+    args.print_prompt = True
+
+    monkeypatch.chdir(vault)
+    monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}" if name in {"defuddle", "qmd"} else None)
+    monkeypatch.setattr(qmd_module.shutil, "which", lambda name: f"/usr/local/bin/{name}" if name in {"defuddle", "qmd"} else None)
+    monkeypatch.setattr(ingest, "fetch_url_html", fake_fetch_url_html(html))
+    monkeypatch.setattr(ingest.subprocess, "run", fake_run_with_defuddle(markdown))
+
+    assert cli.cmd_dispatch(args) == 0
+    packet = json.loads(capsys.readouterr().out)
+    source = packet["sources"][0]
+    assert source["embedded_figures"] == []
+    assert "omitted invalid embedded image data URI" in source["html_extraction"]["warnings"][0]
+
+
+def test_oversized_sanitized_prompt_fails_before_codex(tmp_path: Path, monkeypatch, capsys) -> None:
+    isolate_qmd_home(tmp_path, monkeypatch)
+    vault = make_vault(tmp_path)
+    url = "https://example.com/large.html"
+    args = IngestArgs([url])
+
+    monkeypatch.chdir(vault)
+    monkeypatch.setattr(ingest, "CODEX_PROMPT_MAX_CHARS", 1_000)
+    monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}" if name in {"defuddle", "qmd", "codex"} else None)
+    monkeypatch.setattr(qmd_module.shutil, "which", lambda name: f"/usr/local/bin/{name}" if name in {"defuddle", "qmd", "codex"} else None)
+    monkeypatch.setattr(ingest, "fetch_url_html", fake_fetch_url_html("<html><body>Large</body></html>"))
+    monkeypatch.setattr(ingest.subprocess, "run", fake_run_with_defuddle("# Large\n\n" + ("body\n" * 1_000)))
+    monkeypatch.setattr(ingest, "call_codex_exec", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("codex called")))
+
+    assert cli.cmd_dispatch(args) == 1
+    err = capsys.readouterr().err
+    assert "above the 1000 character safety budget" in err
+    assert "html_markdown" in err
 
 
 def test_url_ingest_fails_before_planning_when_defuddle_is_missing(tmp_path: Path, monkeypatch) -> None:
@@ -363,8 +469,9 @@ def test_url_ingest_fails_before_planning_when_defuddle_is_missing(tmp_path: Pat
 
     monkeypatch.chdir(vault)
     monkeypatch.setattr(ingest.shutil, "which", lambda name: None if name == "defuddle" else f"/usr/local/bin/{name}")
+    monkeypatch.setattr(ingest, "fetch_url_html", fake_fetch_url_html("<html></html>"))
     monkeypatch.setattr(ingest.subprocess, "run", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("subprocess.run called")))
-    monkeypatch.setattr(ingest.subprocess, "call", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("codex called")))
+    monkeypatch.setattr(ingest, "call_codex_exec", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("codex called")))
 
     assert cli.cmd_dispatch(args) == 1
     assert not (vault / ".a-inf" / "runs").exists()
@@ -377,7 +484,8 @@ def test_url_ingest_fails_before_planning_when_defuddle_fails_or_empty(tmp_path:
 
     monkeypatch.chdir(vault)
     monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}")
-    monkeypatch.setattr(ingest.subprocess, "call", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("codex called")))
+    monkeypatch.setattr(ingest, "fetch_url_html", fake_fetch_url_html("<html></html>"))
+    monkeypatch.setattr(ingest, "call_codex_exec", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("codex called")))
     monkeypatch.setattr(
         ingest.subprocess,
         "run",
@@ -480,11 +588,10 @@ def test_ingest_valid_plan_applies_pages_and_special_files(tmp_path: Path, monke
     source.write_text("hybrid ingest\n", encoding="utf-8")
     args = IngestArgs([str(source)])
 
-    def fake_call(command: list[str], cwd: Path, env: dict[str, str] | None = None) -> int:
+    def fake_codex(command: list[str], prompt: str, cwd: Path, env: dict[str, str] | None = None) -> int:
         assert command[0] == "/usr/local/bin/codex"
-        match = re.search(r"Write exactly one JSON file at this path: (.+)", command[-1])
-        assert match
-        plan_path = Path(match.group(1).strip())
+        assert command[-1] != prompt
+        plan_path = plan_path_from_prompt(prompt)
         plan_path.parent.mkdir(parents=True, exist_ok=True)
         plan_path.write_text(json.dumps(page_plan(source)), encoding="utf-8")
         return 0
@@ -493,7 +600,7 @@ def test_ingest_valid_plan_applies_pages_and_special_files(tmp_path: Path, monke
     monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}")
     monkeypatch.setattr(qmd_module.shutil, "which", lambda name: f"/usr/local/bin/{name}")
     monkeypatch.setattr(qmd_module.subprocess, "run", fake_qmd_run)
-    monkeypatch.setattr(ingest.subprocess, "call", fake_call)
+    monkeypatch.setattr(ingest, "call_codex_exec", fake_codex)
 
     assert cli.cmd_dispatch(args) == 0
     page = vault / "concepts" / "deterministic-ingest.md"
@@ -502,7 +609,7 @@ def test_ingest_valid_plan_applies_pages_and_special_files(tmp_path: Path, monke
     assert str(source) in manifest["sources"]
     assert manifest["sources"][str(source)]["pages_created"] == ["concepts/deterministic-ingest.md"]
     archive = manifest["sources"][str(source)]
-    assert archive["archive_dir"].startswith(".a-inf/sources/")
+    assert archive["archive_dir"].startswith("_sources/")
     assert (vault / archive["original_path"]).read_text(encoding="utf-8") == "hybrid ingest\n"
     assert (vault / archive["extracted_path"]).read_text(encoding="utf-8") == "hybrid ingest\n"
     metadata = json.loads((vault / archive["archive_dir"] / "metadata.json").read_text(encoding="utf-8"))
@@ -527,11 +634,10 @@ def test_url_ingest_valid_plan_applies_reference_and_manifest(tmp_path: Path, mo
     markdown = "# Example Article\n\nFetched body."
     args = IngestArgs([url])
 
-    def fake_call(command: list[str], cwd: Path, env: dict[str, str] | None = None) -> int:
+    def fake_codex(command: list[str], prompt: str, cwd: Path, env: dict[str, str] | None = None) -> int:
         assert command[0] == "/usr/local/bin/codex"
-        match = re.search(r"Write exactly one JSON file at this path: (.+)", command[-1])
-        assert match
-        plan_path = Path(match.group(1).strip())
+        assert command[-1] != prompt
+        plan_path = plan_path_from_prompt(prompt)
         plan_path.parent.mkdir(parents=True, exist_ok=True)
         plan_path.write_text(json.dumps(url_plan(url, markdown)), encoding="utf-8")
         return 0
@@ -539,8 +645,9 @@ def test_url_ingest_valid_plan_applies_reference_and_manifest(tmp_path: Path, mo
     monkeypatch.chdir(vault)
     monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}")
     monkeypatch.setattr(qmd_module.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(ingest, "fetch_url_html", fake_fetch_url_html(markdown))
     monkeypatch.setattr(ingest.subprocess, "run", fake_run_with_defuddle(markdown))
-    monkeypatch.setattr(ingest.subprocess, "call", fake_call)
+    monkeypatch.setattr(ingest, "call_codex_exec", fake_codex)
 
     assert cli.cmd_dispatch(args) == 0
     page = vault / "references" / "web-example-com-article.md"
@@ -551,11 +658,54 @@ def test_url_ingest_valid_plan_applies_reference_and_manifest(tmp_path: Path, mo
     assert manifest["sources"][url]["source_url"] == url
     assert manifest["sources"][url]["pages_created"] == ["references/web-example-com-article.md"]
     assert (vault / manifest["sources"][url]["extracted_path"]).read_text(encoding="utf-8") == markdown + "\n"
-    assert "original_path" not in manifest["sources"][url]
+    assert (vault / manifest["sources"][url]["original_path"]).read_text(encoding="utf-8") == markdown
     index = (vault / "index.md").read_text(encoding="utf-8")
     assert "[[references/web-example-com-article|Example Article]]" in index
     assert "INGEST" in (vault / "log.md").read_text(encoding="utf-8")
     assert "URL ingest uses deterministic extraction." in (vault / "hot.md").read_text(encoding="utf-8")
+
+
+def test_url_ingest_archives_embedded_figures(tmp_path: Path, monkeypatch) -> None:
+    isolate_qmd_home(tmp_path, monkeypatch)
+    vault = make_vault(tmp_path)
+    url = "https://example.com/slides.html"
+    image = base64.b64encode(b"fake png").decode("ascii")
+    html = f'<html><body><img alt="plot" src="data:image/png;base64,{image}"><img src="data:image/png;base64,{image}"></body></html>'
+    markdown = "# Slides\n\n![plot](_sources/archive/figures/figure-001.png)"
+    args = IngestArgs([url])
+
+    def fake_codex(command: list[str], prompt: str, cwd: Path, env: dict[str, str] | None = None) -> int:
+        plan_path = plan_path_from_prompt(prompt)
+        plan_path.parent.mkdir(parents=True, exist_ok=True)
+        plan_path.write_text(
+            json.dumps(
+                url_plan(
+                    url,
+                    markdown,
+                    path="references/web-example-com-slides-html.md",
+                    content_hash=ingest.hash_bytes(html.encode("utf-8")),
+                )
+            ),
+            encoding="utf-8",
+        )
+        return 0
+
+    monkeypatch.chdir(vault)
+    monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(qmd_module.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(ingest, "fetch_url_html", fake_fetch_url_html(html))
+    monkeypatch.setattr(ingest.subprocess, "run", fake_run_with_defuddle(markdown))
+    monkeypatch.setattr(ingest, "call_codex_exec", fake_codex)
+
+    assert cli.cmd_dispatch(args) == 0
+    manifest = json.loads((vault / ".manifest.json").read_text(encoding="utf-8"))
+    entry = manifest["sources"][url]
+    assert (vault / entry["original_path"]).read_text(encoding="utf-8") == html
+    assert (vault / entry["extracted_path"]).read_text(encoding="utf-8") == markdown + "\n"
+    assert (vault / entry["figures_dir"] / "figure-001.png").read_bytes() == b"fake png"
+    assert len(entry["embedded_figures"]) == 1
+    metadata = json.loads((vault / entry["archive_dir"] / "metadata.json").read_text(encoding="utf-8"))
+    assert metadata["embedded_figures"] == entry["embedded_figures"]
 
 
 def test_pdf_ingest_archives_original_extract_and_figures(tmp_path: Path, monkeypatch) -> None:
@@ -571,10 +721,8 @@ def test_pdf_ingest_archives_original_extract_and_figures(tmp_path: Path, monkey
     packet_markdown = "# Paper Title\n\nEquation: x^2."
     args = IngestArgs([str(source)])
 
-    def fake_call(command: list[str], cwd: Path, env: dict[str, str] | None = None) -> int:
-        match = re.search(r"Write exactly one JSON file at this path: (.+)", command[-1])
-        assert match
-        plan_path = Path(match.group(1).strip())
+    def fake_codex(command: list[str], prompt: str, cwd: Path, env: dict[str, str] | None = None) -> int:
+        plan_path = plan_path_from_prompt(prompt)
         plan_path.parent.mkdir(parents=True, exist_ok=True)
         plan = page_plan(source, path="references/paper.md")
         plan["sources"][0]["source_type"] = "pdf"
@@ -590,7 +738,7 @@ def test_pdf_ingest_archives_original_extract_and_figures(tmp_path: Path, monkey
         "run",
         fake_run_with_mineru(full_markdown, [{"type": "image", "img_path": "images/fig1.png", "page_idx": 0}]),
     )
-    monkeypatch.setattr(ingest.subprocess, "call", fake_call)
+    monkeypatch.setattr(ingest, "call_codex_exec", fake_codex)
 
     assert cli.cmd_dispatch(args) == 0
     manifest = json.loads((vault / ".manifest.json").read_text(encoding="utf-8"))
@@ -610,10 +758,8 @@ def test_archive_can_be_disabled(tmp_path: Path, monkeypatch) -> None:
     source.write_text("hybrid ingest\n", encoding="utf-8")
     args = IngestArgs([str(source)])
 
-    def fake_call(command: list[str], cwd: Path, env: dict[str, str] | None = None) -> int:
-        match = re.search(r"Write exactly one JSON file at this path: (.+)", command[-1])
-        assert match
-        plan_path = Path(match.group(1).strip())
+    def fake_codex(command: list[str], prompt: str, cwd: Path, env: dict[str, str] | None = None) -> int:
+        plan_path = plan_path_from_prompt(prompt)
         plan_path.parent.mkdir(parents=True, exist_ok=True)
         plan_path.write_text(json.dumps(page_plan(source)), encoding="utf-8")
         return 0
@@ -622,12 +768,12 @@ def test_archive_can_be_disabled(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}")
     monkeypatch.setattr(qmd_module.shutil, "which", lambda name: f"/usr/local/bin/{name}")
     monkeypatch.setattr(qmd_module.subprocess, "run", fake_qmd_run)
-    monkeypatch.setattr(ingest.subprocess, "call", fake_call)
+    monkeypatch.setattr(ingest, "call_codex_exec", fake_codex)
 
     assert cli.cmd_dispatch(args) == 0
     manifest = json.loads((vault / ".manifest.json").read_text(encoding="utf-8"))
     assert "archive_dir" not in manifest["sources"][str(source)]
-    assert not (vault / ".a-inf" / "sources").exists()
+    assert not (vault / "_sources").exists()
 
 
 def test_ingest_missing_qmd_fails_before_codex(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -639,7 +785,7 @@ def test_ingest_missing_qmd_fails_before_codex(tmp_path: Path, monkeypatch, caps
 
     monkeypatch.chdir(vault)
     monkeypatch.setattr(qmd_module.shutil, "which", lambda name: None if name == "qmd" else "/usr/local/bin/codex")
-    monkeypatch.setattr(ingest.subprocess, "call", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("codex called")))
+    monkeypatch.setattr(ingest, "call_codex_exec", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("codex called")))
 
     assert cli.cmd_dispatch(args) == 127
     assert "npm install -g @tobilu/qmd" in capsys.readouterr().err
@@ -657,11 +803,9 @@ def test_ingest_checks_qmd_version_before_codex(tmp_path: Path, monkeypatch) -> 
         calls.append(" ".join(command[1:]))
         return subprocess.CompletedProcess(command, 0, stdout="qmd 2.1.0\n", stderr="")
 
-    def fake_call(command: list[str], cwd: Path, env: dict[str, str] | None = None) -> int:
+    def fake_codex(command: list[str], prompt: str, cwd: Path, env: dict[str, str] | None = None) -> int:
         calls.append("codex")
-        match = re.search(r"Write exactly one JSON file at this path: (.+)", command[-1])
-        assert match
-        plan_path = Path(match.group(1).strip())
+        plan_path = plan_path_from_prompt(prompt)
         plan_path.parent.mkdir(parents=True, exist_ok=True)
         plan_path.write_text(json.dumps(page_plan(source)), encoding="utf-8")
         return 0
@@ -670,7 +814,7 @@ def test_ingest_checks_qmd_version_before_codex(tmp_path: Path, monkeypatch) -> 
     monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}")
     monkeypatch.setattr(qmd_module.shutil, "which", lambda name: f"/usr/local/bin/{name}")
     monkeypatch.setattr(qmd_module.subprocess, "run", fake_run)
-    monkeypatch.setattr(ingest.subprocess, "call", fake_call)
+    monkeypatch.setattr(ingest, "call_codex_exec", fake_codex)
 
     assert cli.cmd_dispatch(args) == 0
     assert calls == ["--version", "--version", "collection show vault", "--version", "update", "embed", "codex", "--version", "update", "embed"]
@@ -684,10 +828,8 @@ def test_ingest_invalid_plan_fails_without_wiki_writes(tmp_path: Path, monkeypat
     original_manifest = (vault / ".manifest.json").read_text(encoding="utf-8")
     args = IngestArgs([str(source)])
 
-    def fake_call(command: list[str], cwd: Path, env: dict[str, str] | None = None) -> int:
-        match = re.search(r"Write exactly one JSON file at this path: (.+)", command[-1])
-        assert match
-        plan_path = Path(match.group(1).strip())
+    def fake_codex(command: list[str], prompt: str, cwd: Path, env: dict[str, str] | None = None) -> int:
+        plan_path = plan_path_from_prompt(prompt)
         plan_path.parent.mkdir(parents=True, exist_ok=True)
         plan_path.write_text(json.dumps({"version": 1, "mode": "append", "sources": [], "pages": []}), encoding="utf-8")
         return 0
@@ -696,7 +838,7 @@ def test_ingest_invalid_plan_fails_without_wiki_writes(tmp_path: Path, monkeypat
     monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}")
     monkeypatch.setattr(qmd_module.shutil, "which", lambda name: f"/usr/local/bin/{name}")
     monkeypatch.setattr(qmd_module.subprocess, "run", fake_qmd_run)
-    monkeypatch.setattr(ingest.subprocess, "call", fake_call)
+    monkeypatch.setattr(ingest, "call_codex_exec", fake_codex)
 
     assert cli.cmd_dispatch(args) == 1
     assert not (vault / "concepts" / "deterministic-ingest.md").exists()
@@ -765,6 +907,7 @@ def test_append_mode_skips_unchanged_url_sources_in_packet(tmp_path: Path, monke
     monkeypatch.chdir(vault)
     monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}" if name in {"defuddle", "qmd"} else None)
     monkeypatch.setattr(qmd_module.shutil, "which", lambda name: f"/usr/local/bin/{name}" if name in {"defuddle", "qmd"} else None)
+    monkeypatch.setattr(ingest, "fetch_url_html", fake_fetch_url_html(markdown))
     monkeypatch.setattr(ingest.subprocess, "run", fake_run_with_defuddle(markdown))
 
     assert cli.cmd_dispatch(args) == 0
@@ -799,6 +942,7 @@ def test_append_mode_includes_modified_url_sources_in_packet(tmp_path: Path, mon
     monkeypatch.chdir(vault)
     monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}" if name in {"defuddle", "qmd"} else None)
     monkeypatch.setattr(qmd_module.shutil, "which", lambda name: f"/usr/local/bin/{name}" if name in {"defuddle", "qmd"} else None)
+    monkeypatch.setattr(ingest, "fetch_url_html", fake_fetch_url_html(markdown))
     monkeypatch.setattr(ingest.subprocess, "run", fake_run_with_defuddle(markdown))
 
     assert cli.cmd_dispatch(args) == 0

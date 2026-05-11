@@ -277,7 +277,7 @@ def test_exact_math_query_includes_archived_source_details(tmp_path: Path, monke
         summary="Paper summary.",
         body="Key source card.",
     )
-    archive_dir = vault / ".a-inf" / "sources" / "abc-paper"
+    archive_dir = vault / "_sources" / "abc-paper"
     archive_dir.mkdir(parents=True)
     extracted = archive_dir / "extracted.md"
     extracted.write_text("The objective is min_x ||Ax-b||^2 with Gauss-Newton updates.", encoding="utf-8")
@@ -289,8 +289,8 @@ def test_exact_math_query_includes_archived_source_details(tmp_path: Path, monke
                     "paper.pdf": {
                         "source_type": "pdf",
                         "archive_id": "abc-paper",
-                        "archive_dir": ".a-inf/sources/abc-paper",
-                        "extracted_path": ".a-inf/sources/abc-paper/extracted.md",
+                        "archive_dir": "_sources/abc-paper",
+                        "extracted_path": "_sources/abc-paper/extracted.md",
                         "pages_created": ["references/paper.md"],
                         "pages_updated": [],
                     }
@@ -320,7 +320,7 @@ def test_exact_math_query_includes_archived_source_details(tmp_path: Path, monke
     )
 
     assert page.is_file()
-    assert packet["source_details"][0]["extracted_path"] == ".a-inf/sources/abc-paper/extracted.md"
+    assert packet["source_details"][0]["extracted_path"] == "_sources/abc-paper/extracted.md"
     assert "min_x" in packet["source_details"][0]["snippets"][0]
 
 
@@ -328,7 +328,7 @@ def test_normal_query_omits_source_details(tmp_path: Path, monkeypatch) -> None:
     vault = tmp_path / "vault"
     vault.mkdir()
     write_page(vault, "references/paper.md", title="Paper", tags=["math"], summary="Paper summary.")
-    archive_dir = vault / ".a-inf" / "sources" / "abc-paper"
+    archive_dir = vault / "_sources" / "abc-paper"
     archive_dir.mkdir(parents=True)
     (archive_dir / "extracted.md").write_text("Detailed source text.", encoding="utf-8")
     (vault / ".manifest.json").write_text(
@@ -336,7 +336,7 @@ def test_normal_query_omits_source_details(tmp_path: Path, monkeypatch) -> None:
             {
                 "sources": {
                     "paper.pdf": {
-                        "extracted_path": ".a-inf/sources/abc-paper/extracted.md",
+                        "extracted_path": "_sources/abc-paper/extracted.md",
                         "pages_created": ["references/paper.md"],
                         "pages_updated": [],
                     }
@@ -367,7 +367,7 @@ def test_weak_query_retrieval_auto_includes_source_details(tmp_path: Path, monke
     vault = tmp_path / "vault"
     vault.mkdir()
     write_page(vault, "references/paper.md", title="Paper", tags=["math"], summary="Sparse.")
-    archive_dir = vault / ".a-inf" / "sources" / "abc-paper"
+    archive_dir = vault / "_sources" / "abc-paper"
     archive_dir.mkdir(parents=True)
     (archive_dir / "extracted.md").write_text("Latent smoother objective details.", encoding="utf-8")
     (vault / ".manifest.json").write_text(
@@ -375,7 +375,7 @@ def test_weak_query_retrieval_auto_includes_source_details(tmp_path: Path, monke
             {
                 "sources": {
                     "paper.pdf": {
-                        "extracted_path": ".a-inf/sources/abc-paper/extracted.md",
+                        "extracted_path": "_sources/abc-paper/extracted.md",
                         "pages_created": ["references/paper.md"],
                         "pages_updated": [],
                     }
@@ -412,7 +412,7 @@ def test_filtered_query_does_not_expose_internal_source_details(tmp_path: Path, 
         tags=["math", "visibility/internal"],
         summary="Internal paper.",
     )
-    archive_dir = vault / ".a-inf" / "sources" / "private"
+    archive_dir = vault / "_sources" / "private"
     archive_dir.mkdir(parents=True)
     (archive_dir / "extracted.md").write_text("Secret equation.", encoding="utf-8")
     (vault / ".manifest.json").write_text(
@@ -420,7 +420,7 @@ def test_filtered_query_does_not_expose_internal_source_details(tmp_path: Path, 
             {
                 "sources": {
                     "private.pdf": {
-                        "extracted_path": ".a-inf/sources/private/extracted.md",
+                        "extracted_path": "_sources/private/extracted.md",
                         "pages_created": ["references/private.md"],
                         "pages_updated": [],
                     }

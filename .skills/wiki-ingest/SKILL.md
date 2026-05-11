@@ -41,7 +41,7 @@ The deterministic engine supplies the run packet in the prompt:
 - `qmd_wiki_collection` and `qmd_papers_collection`: collection names for related-source discovery.
 - HTML sources may include an `html_extract` with extracted title, h1/h2/h3 headings, section-level visible-text snippets, a bounded whole-document text sample, and truncation metadata.
 - PDF sources may include `pdf_extract` from MinerU with bounded markdown, output paths, extraction metadata, warnings, and a small `content_list_sample`.
-- Sources may include an `archive` object with local-only paths under `.a-inf/sources/`. Treat this as the durable detail layer beneath compiled wiki pages; do not edit it.
+- Sources may include an `archive` object with local-only paths under `_sources/`. Treat this as the durable detail layer beneath compiled wiki pages; do not edit it.
 
 Python has already selected the sources. Do not re-run append/full/raw filtering and do not skip selected
 sources unless you cannot read them; if a source cannot be interpreted, include it in `sources`, leave both

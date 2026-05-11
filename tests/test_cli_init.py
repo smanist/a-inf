@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 from a_inf import cli
@@ -31,6 +32,38 @@ def test_init_creates_vault_structure_and_local_skill_links(tmp_path: Path, monk
     result = cmd_init(Args(vault, skills_source))
 
     assert result == 0
+    assert (vault / ".git").is_dir()
+    log = subprocess.run(
+        ["git", "log", "--format=%s", "-1"],
+        cwd=vault,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert log.stdout.strip() == "Initialize a-inf vault"
+    status = subprocess.run(
+        ["git", "status", "--short"],
+        cwd=vault,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert status.stdout.strip() == ""
+    tracked = subprocess.run(
+        ["git", "ls-files"],
+        cwd=vault,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert "index.md" in tracked.stdout.splitlines()
+    assert ".env" not in tracked.stdout.splitlines()
+    for dirname in cli.TRACKED_SCAFFOLD_DIRS:
+        gitkeep = f"{dirname}/.gitkeep"
+        assert (vault / gitkeep).is_file()
+        assert gitkeep in tracked.stdout.splitlines()
+    assert not (vault / "_raw" / ".gitkeep").exists()
+    assert not (vault / "_sources" / ".gitkeep").exists()
     for dirname in [
         "concepts",
         "entities",
@@ -42,8 +75,8 @@ def test_init_creates_vault_structure_and_local_skill_links(tmp_path: Path, monk
         "ideas",
         "_archives",
         "_raw",
+        "_sources",
         "_meta",
-        ".a-inf/sources",
         ".obsidian",
         ".agents",
         ".agents/skills",
@@ -56,10 +89,10 @@ def test_init_creates_vault_structure_and_local_skill_links(tmp_path: Path, monk
     assert f"QMD_WIKI_COLLECTION={vault.name}" in env
     assert f"QMD_PAPERS_COLLECTION={vault.name}" in env
     assert "A_INF_ARCHIVE_SOURCES=true" in env
-    assert "A_INF_SOURCE_ARCHIVE_DIR=.a-inf/sources" in env
+    assert "A_INF_SOURCE_ARCHIVE_DIR=_sources" in env
     assert "A_INF_QUERY_SOURCE_DETAIL=auto" in env
     graph = json.loads((vault / ".obsidian" / "graph.json").read_text(encoding="utf-8"))
-    assert graph["search"] == "-tag:#a-inf"
+    assert graph["search"] == "-tag:#a-inf -path:_sources"
     assert graph["collapse-filter"] is True
     assert (vault / "index.md").is_file()
     assert (vault / "log.md").is_file()
@@ -75,6 +108,7 @@ def test_init_creates_vault_structure_and_local_skill_links(tmp_path: Path, monk
     assert "# a-inf local configuration" in gitignore
     assert ".DS_Store" in gitignore
     assert "_raw/" in gitignore
+    assert "_sources/" in gitignore
     assert ".env" in gitignore
     assert ".a-inf/" in gitignore
 
@@ -94,6 +128,70 @@ def test_init_creates_vault_structure_and_local_skill_links(tmp_path: Path, monk
     assert not (vault / ".agents" / "skills" / "wiki-setup").exists()
 
 
+def test_init_runs_git_init_before_vault_files(tmp_path: Path, monkeypatch) -> None:
+    vault = tmp_path / "vault"
+    skills_source = Path(__file__).resolve().parents[1] / ".skills"
+    calls: list[Path] = []
+
+    def fake_run(
+        command: list[str],
+        cwd: Path,
+        text: bool,
+        capture_output: bool,
+        check: bool,
+    ) -> object:
+        assert command == ["git", "init"]
+        assert cwd == vault
+        assert text is True
+        assert capture_output is True
+        assert check is False
+        assert vault.is_dir()
+        assert not (vault / "index.md").exists()
+        assert not (vault / "concepts").exists()
+        calls.append(cwd)
+        return cli.subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+    monkeypatch.setattr(cli, "ensure_qmd_collection", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(cli, "commit_vault_scaffold", lambda _vault: 0)
+
+    assert cmd_init(Args(vault, skills_source)) == 0
+    assert calls == [vault]
+
+
+def test_init_commit_leaves_existing_unrelated_files_untracked(tmp_path: Path, monkeypatch) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "concepts").mkdir()
+    (vault / "README.md").write_text("# Existing project\n", encoding="utf-8")
+    (vault / "concepts" / "preexisting.md").write_text("# Existing note\n", encoding="utf-8")
+    skills_source = Path(__file__).resolve().parents[1] / ".skills"
+    monkeypatch.setattr(cli, "ensure_qmd_collection", lambda *_args, **_kwargs: True)
+
+    assert cmd_init(Args(vault, skills_source)) == 0
+
+    tracked = subprocess.run(
+        ["git", "ls-files"],
+        cwd=vault,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert "index.md" in tracked.stdout.splitlines()
+    assert "concepts/.gitkeep" in tracked.stdout.splitlines()
+    assert "README.md" not in tracked.stdout.splitlines()
+    assert "concepts/preexisting.md" not in tracked.stdout.splitlines()
+    status = subprocess.run(
+        ["git", "status", "--short"],
+        cwd=vault,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert "?? README.md" in status.stdout.splitlines()
+    assert "?? concepts/preexisting.md" in status.stdout.splitlines()
+
+
 def test_init_is_idempotent(tmp_path: Path, monkeypatch) -> None:
     vault = tmp_path / "vault"
     skills_source = Path(__file__).resolve().parents[1] / ".skills"
@@ -102,6 +200,14 @@ def test_init_is_idempotent(tmp_path: Path, monkeypatch) -> None:
 
     assert cmd_init(args) == 0
     assert cmd_init(args) == 0
+    commit_count = subprocess.run(
+        ["git", "rev-list", "--count", "HEAD"],
+        cwd=vault,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert commit_count.stdout.strip() == "1"
 
     agents = (vault / "AGENTS.md").read_text(encoding="utf-8")
     gitignore = (vault / ".gitignore").read_text(encoding="utf-8")
@@ -125,6 +231,7 @@ def test_init_upgrades_existing_gitignore_section(tmp_path: Path, monkeypatch) -
     assert gitignore.count("# a-inf local configuration") == 1
     assert ".DS_Store" in gitignore
     assert "_raw/" in gitignore
+    assert "_sources/" in gitignore
     assert ".env" in gitignore
     assert ".a-inf/" in gitignore
 

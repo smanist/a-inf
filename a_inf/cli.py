@@ -31,10 +31,22 @@ VAULT_DIRS = [
     "ideas",
     "_archives",
     "_raw",
+    "_sources",
     "_meta",
-    ".a-inf/sources",
     ".obsidian",
     str(LOCAL_SKILLS_DIR),
+]
+
+TRACKED_SCAFFOLD_DIRS = [
+    "concepts",
+    "entities",
+    "skills",
+    "references",
+    "synthesis",
+    "journal",
+    "projects",
+    "ideas",
+    "_archives",
 ]
 
 SKILL_ALIASES = {
@@ -70,6 +82,22 @@ QMD_SYNC_SKILLS = {
     "wiki-fixlink",
     "wiki-tags",
 }
+
+INIT_COMMIT_PATHS = [
+    *[f"{dirname}/.gitkeep" for dirname in TRACKED_SCAFFOLD_DIRS],
+    "index.md",
+    "log.md",
+    "hot.md",
+    "_insights.md",
+    "_meta/taxonomy.md",
+    ".manifest.json",
+    ".obsidian/app.json",
+    ".obsidian/appearance.json",
+    ".obsidian/graph.json",
+    str(LOCAL_SKILLS_DIR),
+    "AGENTS.md",
+    ".gitignore",
+]
 
 
 @dataclass(frozen=True)
@@ -380,9 +408,14 @@ def cmd_init(args: argparse.Namespace) -> int:
     skills_source = resolve_skills_source(args.skills_source)
 
     vault.mkdir(parents=True, exist_ok=True)
+    git_result = initialize_git_repo(vault)
+    if git_result != 0:
+        return git_result
+
     for dirname in VAULT_DIRS:
         (vault / dirname).mkdir(parents=True, exist_ok=True)
 
+    ensure_gitkeep_files(vault)
     write_file_if_missing(vault / "index.md", index_template())
     write_file_if_missing(vault / "log.md", log_template(vault))
     write_file_if_missing(vault / "hot.md", hot_template(vault))
@@ -424,11 +457,132 @@ def cmd_init(args: argparse.Namespace) -> int:
     if not ensure_qmd_collection(vault, config):
         return 127
 
+    commit_result = commit_vault_scaffold(vault)
+    if commit_result != 0:
+        return commit_result
+
     print(f"Initialized a-inf vault: {vault}")
     print(f"Skills source: {skills_source}")
     print(f"Skills installed locally: {linked}")
     print("Next: a-inf ingest <source> or a-inf status")
     return 0
+
+
+def initialize_git_repo(vault: Path) -> int:
+    try:
+        result = subprocess.run(
+            ["git", "init"],
+            cwd=vault,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+    except FileNotFoundError:
+        print("git executable not found. Install git and re-run a-inf init.", file=sys.stderr)
+        return 127
+
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()
+        message = f"git init failed in {vault}"
+        if detail:
+            message = f"{message}: {detail}"
+        print(message, file=sys.stderr)
+    return result.returncode
+
+
+def ensure_gitkeep_files(vault: Path) -> None:
+    for dirname in TRACKED_SCAFFOLD_DIRS:
+        write_file_if_missing(vault / dirname / ".gitkeep", "")
+
+
+def commit_vault_scaffold(vault: Path) -> int:
+    paths = [path for path in INIT_COMMIT_PATHS if (vault / path).exists()]
+    if not paths:
+        return 0
+
+    add_result = run_git_command(vault, ["add", "--", *paths], "git add failed")
+    if add_result != 0:
+        return add_result
+
+    diff_result = run_git_command(
+        vault,
+        ["diff", "--cached", "--quiet"],
+        "git diff failed",
+        ok_returncodes={0, 1},
+    )
+    if diff_result == 0:
+        return 0
+    if diff_result != 1:
+        return diff_result
+
+    return run_git_command(
+        vault,
+        ["commit", "-m", "Initialize a-inf vault"],
+        "git commit failed",
+        env=git_commit_env(vault),
+    )
+
+
+def run_git_command(
+    vault: Path,
+    args: list[str],
+    failure_message: str,
+    env: dict[str, str] | None = None,
+    ok_returncodes: set[int] | None = None,
+) -> int:
+    ok = ok_returncodes or {0}
+    command = ["git", *args]
+    try:
+        result = subprocess.run(
+            command,
+            cwd=vault,
+            text=True,
+            capture_output=True,
+            check=False,
+            env=env,
+        )
+    except FileNotFoundError:
+        print("git executable not found. Install git and re-run a-inf init.", file=sys.stderr)
+        return 127
+
+    if result.returncode not in ok:
+        detail = (result.stderr or result.stdout).strip()
+        message = f"{failure_message} in {vault}"
+        if detail:
+            message = f"{message}: {detail}"
+        print(message, file=sys.stderr)
+    return result.returncode
+
+
+def git_commit_env(vault: Path) -> dict[str, str] | None:
+    configured_name = git_config_value(vault, "user.name")
+    configured_email = git_config_value(vault, "user.email")
+    if configured_name and configured_email:
+        return None
+
+    env = os.environ.copy()
+    name = env.get("GIT_AUTHOR_NAME") or env.get("GIT_COMMITTER_NAME") or configured_name or "a-inf"
+    email = env.get("GIT_AUTHOR_EMAIL") or env.get("GIT_COMMITTER_EMAIL") or configured_email or "a-inf@example.invalid"
+    env.setdefault("GIT_AUTHOR_NAME", name)
+    env.setdefault("GIT_AUTHOR_EMAIL", email)
+    env.setdefault("GIT_COMMITTER_NAME", name)
+    env.setdefault("GIT_COMMITTER_EMAIL", email)
+    return env
+
+
+def git_config_value(vault: Path, key: str) -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "config", "--get", key],
+            cwd=vault,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+    except FileNotFoundError:
+        return None
+    value = result.stdout.strip()
+    return value or None
 
 
 def cmd_dispatch(args: argparse.Namespace) -> int:
@@ -1195,7 +1349,7 @@ def ensure_agents_section(path: Path) -> None:
 
 
 def ensure_gitignore_section(path: Path) -> None:
-    required_entries = [".DS_Store", "_raw/", ".env", ".a-inf/"]
+    required_entries = [".DS_Store", "_raw/", "_sources/", ".env", ".a-inf/"]
     section = "\n".join(["# a-inf local configuration", *required_entries, ""])
     if path.exists():
         current = path.read_text(encoding="utf-8")
@@ -1300,7 +1454,7 @@ Canonical tags will be added here as the vault grows.
 def graph_template() -> dict[str, object]:
     return {
         "collapse-filter": True,
-        "search": "-tag:#a-inf",
+        "search": "-tag:#a-inf -path:_sources",
         "showTags": False,
         "showAttachments": False,
         "hideUnresolved": False,
@@ -1334,7 +1488,7 @@ OBSIDIAN_RAW_DIR=_raw
 QMD_WIKI_COLLECTION={vault.name}
 QMD_PAPERS_COLLECTION={vault.name}
 A_INF_ARCHIVE_SOURCES=true
-A_INF_SOURCE_ARCHIVE_DIR=.a-inf/sources
+A_INF_SOURCE_ARCHIVE_DIR=_sources
 A_INF_QUERY_SOURCE_DETAIL=auto
 """
 

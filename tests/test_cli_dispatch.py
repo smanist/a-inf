@@ -118,7 +118,7 @@ def test_status_command_reports_delta_without_codex(
                 "content_hash": digest,
                 "size_bytes": source.stat().st_size,
                 "source_type": "document",
-                "archive_dir": ".a-inf/sources/example",
+                "archive_dir": "_sources/example",
             }
         },
         "projects": {},
