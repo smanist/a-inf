@@ -71,7 +71,7 @@ def run_lint(args: Any, vault: Path, config: dict[str, str]) -> int:
 def build_lint_packet(vault: Path, config: dict[str, str] | None = None) -> dict[str, Any]:
     generated_at = now_iso()
     pages = build_page_registry(vault)
-    links = build_link_graph(pages)
+    links = build_link_graph(vault, pages)
     findings = build_findings(vault, pages, links)
     candidates = build_candidates(pages, links)
     summary = summarize_findings(findings, candidates)
@@ -148,7 +148,7 @@ def iter_content_markdown(vault: Path) -> Iterable[str]:
             yield path.relative_to(vault).as_posix()
 
 
-def build_link_graph(pages: dict[str, Page]) -> dict[str, Any]:
+def build_link_graph(vault: Path, pages: dict[str, Page]) -> dict[str, Any]:
     resolver = LinkResolver(pages)
     resolved_edges: list[dict[str, Any]] = []
     broken_edges: list[dict[str, Any]] = []
@@ -157,6 +157,8 @@ def build_link_graph(pages: dict[str, Page]) -> dict[str, Any]:
     for page in pages.values():
         seen_targets: set[str] = set()
         for link in extract_wikilinks(page.body):
+            if is_existing_source_archive_link(vault, page, link["target"]):
+                continue
             target = resolver.resolve(link["target"])
             edge = {"source": page.rel, "target": link["target"], "line": link["line"], "raw": link["raw"]}
             if target:
@@ -174,6 +176,11 @@ def build_link_graph(pages: dict[str, Page]) -> dict[str, Any]:
         "incoming_counts": incoming,
         "outgoing_counts": outgoing,
     }
+
+
+def is_existing_source_archive_link(vault: Path, page: Page, target: str) -> bool:
+    cleaned = clean_link_target(target)
+    return page.rel.startswith("references/") and cleaned.startswith("_sources/") and (vault / cleaned).is_file()
 
 
 class LinkResolver:

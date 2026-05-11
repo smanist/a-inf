@@ -80,7 +80,7 @@ def run_insights(args: Any, vault: Path, config: dict[str, str] | None = None) -
 
 def build_insights_packet(vault: Path, config: dict[str, str], explanations_path: Path | None = None) -> dict[str, Any]:
     pages = lint.build_page_registry(vault)
-    links = lint.build_link_graph(pages)
+    links = lint.build_link_graph(vault, pages)
     snapshot = build_snapshot(pages, links)
     previous_snapshot = read_previous_snapshot(vault / "_insights.md")
     anchors = anchor_pages(pages, links)

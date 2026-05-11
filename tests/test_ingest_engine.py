@@ -665,6 +665,41 @@ def test_url_ingest_valid_plan_applies_reference_and_manifest(tmp_path: Path, mo
     assert "URL ingest uses deterministic extraction." in (vault / "hot.md").read_text(encoding="utf-8")
 
 
+def test_reference_pages_normalize_backticked_source_archive_paths(tmp_path: Path, monkeypatch) -> None:
+    isolate_qmd_home(tmp_path, monkeypatch)
+    vault = make_vault(tmp_path)
+    url = "https://example.com/article"
+    markdown = "# Example Article\n\nFetched body."
+    archive_id = f"{ingest.hash_bytes(markdown.encode('utf-8')).split(':', 1)[1][:16]}-example-com-article"
+    archive_path = f"_sources/{archive_id}/extracted.md"
+    args = IngestArgs([url])
+
+    def fake_codex(command: list[str], prompt: str, cwd: Path, env: dict[str, str] | None = None) -> int:
+        plan_path = plan_path_from_prompt(prompt)
+        plan_path.parent.mkdir(parents=True, exist_ok=True)
+        plan = url_plan(url, markdown)
+        plan["pages"][0]["body"] = (
+            f"# Example Article\n\nFull extract: `{archive_path}`.\n\n"
+            "```markdown\n"
+            f"Literal example: `{archive_path}`\n"
+            "```"
+        )
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        return 0
+
+    monkeypatch.chdir(vault)
+    monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(qmd_module.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(ingest, "fetch_url_html", fake_fetch_url_html(markdown))
+    monkeypatch.setattr(ingest.subprocess, "run", fake_run_with_defuddle(markdown))
+    monkeypatch.setattr(ingest, "call_codex_exec", fake_codex)
+
+    assert cli.cmd_dispatch(args) == 0
+    page = (vault / "references" / "web-example-com-article.md").read_text(encoding="utf-8")
+    assert f"Full extract: [[{archive_path}]]." in page
+    assert f"Literal example: `{archive_path}`" in page
+
+
 def test_url_ingest_archives_embedded_figures(tmp_path: Path, monkeypatch) -> None:
     isolate_qmd_home(tmp_path, monkeypatch)
     vault = make_vault(tmp_path)

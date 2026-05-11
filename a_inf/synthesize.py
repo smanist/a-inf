@@ -207,7 +207,7 @@ def build_synthesis_packet(
     lint_source: str = "inline_lint",
 ) -> dict[str, Any]:
     pages = lint.build_page_registry(vault)
-    links = lint.build_link_graph(pages)
+    links = lint.build_link_graph(vault, pages)
     candidates = canonical_candidates(lint_packet, semantic_review, pages, links)
     candidates = filter_candidates(candidates, pages, workflow_args)
     selected = candidates[:MAX_AUTHORING_CANDIDATES]

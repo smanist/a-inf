@@ -91,6 +91,7 @@ Plan roughly 10-15 page operations per ingest unless the selected batch is very 
 - Project-specific knowledge belongs under `projects/<project-name>/<category>/`; general knowledge belongs in global category directories.
 - Body content must be complete markdown without frontmatter.
 - Add links naturally in the body. Use the requested `link_format`.
+- In `references/*.md` page bodies only, cite local archive paths under `_sources/` as Obsidian wikilinks, e.g. `[[_sources/<archive-id>/extracted.md]]`; do not wrap those `_sources/...` references in backticks.
 
 ## Page Semantics
 

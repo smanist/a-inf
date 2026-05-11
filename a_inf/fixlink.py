@@ -127,7 +127,7 @@ def build_fixlink_packet(
     vault: Path, config: dict[str, str], lint_packet: dict[str, Any], repair_plan_path: Path
 ) -> dict[str, Any]:
     pages = lint.build_page_registry(vault)
-    links = lint.build_link_graph(pages)
+    links = lint.build_link_graph(vault, pages)
     candidates = build_candidates(pages, links, lint_packet)
     return {
         "version": 1,
@@ -462,7 +462,7 @@ def validate_repair_plan(plan: dict[str, Any], packet: dict[str, Any], vault: Pa
     seen: set[str] = set()
     validated: list[ValidatedDecision] = []
     current_pages = lint.build_page_registry(vault)
-    current_links = lint.build_link_graph(current_pages)
+    current_links = lint.build_link_graph(vault, current_pages)
     existing = existing_pairs(current_links)
     resolver = lint.LinkResolver(current_pages)
 
@@ -626,7 +626,7 @@ def format_link(current: Path, target: Path, display: str, config: dict[str, str
 
 def update_misc_affinity(vault: Path) -> set[str]:
     pages = lint.build_page_registry(vault)
-    links = lint.build_link_graph(pages)
+    links = lint.build_link_graph(vault, pages)
     neighbors: dict[str, set[str]] = defaultdict(set)
     for edge in links["resolved_edges"]:
         neighbors[edge["source"]].add(edge["resolved"])

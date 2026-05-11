@@ -114,6 +114,18 @@ def test_lint_json_no_codex_outputs_packet_and_skips_semantic_review(tmp_path: P
     assert packet["findings"]["broken_wikilinks"][0]["target"] == "missing"
 
 
+def test_lint_allows_reference_wikilinks_to_existing_source_archives(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    archive = vault / "_sources" / "abc-paper" / "extracted.md"
+    archive.parent.mkdir(parents=True)
+    archive.write_text("Detailed source text.", encoding="utf-8")
+    write_page(vault, "references/paper.md", body="Full extract: [[_sources/abc-paper/extracted.md]].")
+
+    packet = lint.build_lint_packet(vault, {})
+
+    assert packet["findings"]["broken_wikilinks"] == []
+
+
 def test_lint_markdown_no_codex_hides_candidate_sections(tmp_path: Path, monkeypatch, capsys) -> None:
     vault = make_vault(tmp_path)
     write_page(vault, "concepts/a.md", body="See [[missing]].")
