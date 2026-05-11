@@ -1519,6 +1519,7 @@ This repository is initialized as an a-inf Obsidian wiki vault.
 - The CLI may dispatch complex workflows to Codex; when it does, follow the selected skill file exactly.
 - Keep `.manifest.json`, `index.md`, `log.md`, and `hot.md` current after write operations.
 - Use `[[wikilinks]]` unless local config sets `OBSIDIAN_LINK_FORMAT=markdown`.
+- For generated Markdown math, use `$...$` inline and `$$...$$` display delimiters; do not use `\\[` or `\\]`.
 <!-- END A-INF -->
 """
 

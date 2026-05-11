@@ -342,6 +342,12 @@ Skills that consume this table: `wiki-query`, `wiki-fixlink`, `wiki-lint`, `wiki
 
 6. **Obsidian is the IDE.** The user browses and explores the wiki in Obsidian. Everything must be valid Obsidian markdown with working wikilinks.
 
+## Math Markdown
+
+When generating Markdown that contains math, use LaTeX-style math delimiters compatible with Obsidian.
+Use `$...$` for inline math and `$$...$$` for display math. Do not use `\[` and `\]` display
+delimiters in generated wiki Markdown.
+
 ## Link Format
 
 All internal links connecting wiki pages are controlled by `OBSIDIAN_LINK_FORMAT` (read from `~/.obsidian-wiki/config` or `.env`, default: `wikilink`).

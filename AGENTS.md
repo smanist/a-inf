@@ -41,6 +41,12 @@ $OBSIDIAN_VAULT_PATH/
 
 Every wiki page has required frontmatter: `title`, `category`, `tags`, `sources`, `created`, `updated`. Pages connect via internal links — `[[wikilinks]]` by default, or standard Markdown links when `OBSIDIAN_LINK_FORMAT=markdown` is set in config.
 
+## Markdown Math
+
+When generating Markdown that contains math, use LaTeX-style math delimiters compatible with Obsidian:
+inline math uses `$...$`, and display math uses `$$...$$`. Do not emit `\[` and `\]` display
+delimiters in generated wiki Markdown.
+
 ## Skill Routing
 
 Prefer CLI commands for user-facing workflows. Bundled skills live in `.skills/<name>/SKILL.md`; initialized local Codex skills are symlinked at `.agents/skills/<name>/SKILL.md`.

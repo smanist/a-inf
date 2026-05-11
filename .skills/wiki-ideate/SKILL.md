@@ -77,6 +77,8 @@ not a repo-specific task list.>
 - The packet should be useful without the current conversation.
 - The math section should be as formal as the idea permits; if formal math is not applicable, state
   the closest operational model, variables, invariants, and success criteria.
+- Use `$...$` for inline math and `$$...$$` for display math. Do not emit `\[` and `\]` display
+  delimiters in the generated Markdown packet.
 - Avoid over-prescribing implementation steps. The downstream repo agent owns repo-specific planning.
 - Use `^[inferred]` for non-obvious synthesized claims and `^[ambiguous]` where the packet context is thin.
 

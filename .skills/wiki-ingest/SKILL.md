@@ -62,6 +62,8 @@ Promote key math into compiled wiki pages when it is central to the source or re
 functions, loss definitions, recurrence equations, notation tables, assumptions, theorem statements, algorithm
 updates, and derivation sketches. Keep the wiki concise; do not copy every formula by default. Full extracted
 math remains in archive `extracted_path` when available, and the original artifact remains the authority.
+When writing math into generated Markdown, use `$...$` for inline math and `$$...$$` for display math.
+Do not emit `\[` and `\]` display delimiters in wiki page bodies.
 
 ## QMD Discovery
 
