@@ -1349,7 +1349,7 @@ def ensure_agents_section(path: Path) -> None:
 
 
 def ensure_gitignore_section(path: Path) -> None:
-    required_entries = [".DS_Store", "_raw/", "_sources/", ".env", ".a-inf/"]
+    required_entries = [".DS_Store", "_raw/", "_sources/", ".env", ".a-inf/", "graph.json.backup-*"]
     section = "\n".join(["# a-inf local configuration", *required_entries, ""])
     if path.exists():
         current = path.read_text(encoding="utf-8")
@@ -1460,7 +1460,10 @@ def graph_template() -> dict[str, object]:
         "hideUnresolved": False,
         "showOrphans": True,
         "collapse-color-groups": True,
-        "colorGroups": [],
+        "colorGroups": [
+            {"query": 'path:"concepts"', "color": {"a": 1, "rgb": 5142951}},
+            {"query": 'path:"references"', "color": {"a": 1, "rgb": 7780274}},
+        ],
         "collapse-display": True,
         "showArrow": False,
         "textFadeMultiplier": 0,

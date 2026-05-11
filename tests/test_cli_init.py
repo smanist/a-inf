@@ -94,6 +94,10 @@ def test_init_creates_vault_structure_and_local_skill_links(tmp_path: Path, monk
     graph = json.loads((vault / ".obsidian" / "graph.json").read_text(encoding="utf-8"))
     assert graph["search"] == "-tag:#a-inf -path:_sources"
     assert graph["collapse-filter"] is True
+    assert graph["colorGroups"] == [
+        {"query": 'path:"concepts"', "color": {"a": 1, "rgb": 5142951}},
+        {"query": 'path:"references"', "color": {"a": 1, "rgb": 7780274}},
+    ]
     assert (vault / "index.md").is_file()
     assert (vault / "log.md").is_file()
     assert (vault / "hot.md").is_file()
@@ -111,6 +115,7 @@ def test_init_creates_vault_structure_and_local_skill_links(tmp_path: Path, monk
     assert "_sources/" in gitignore
     assert ".env" in gitignore
     assert ".a-inf/" in gitignore
+    assert "graph.json.backup-*" in gitignore
 
     manifest = json.loads((vault / ".manifest.json").read_text(encoding="utf-8"))
     assert manifest["version"] == 1
@@ -234,6 +239,7 @@ def test_init_upgrades_existing_gitignore_section(tmp_path: Path, monkeypatch) -
     assert "_sources/" in gitignore
     assert ".env" in gitignore
     assert ".a-inf/" in gitignore
+    assert "graph.json.backup-*" in gitignore
 
 
 def test_init_does_not_overwrite_existing_graph_settings(tmp_path: Path, monkeypatch) -> None:
