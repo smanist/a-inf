@@ -21,6 +21,7 @@ from a_inf.qmd import (
     resolve_qmd,
     run_qmd,
 )
+from a_inf.runs import runs_root, unique_dir
 
 
 WIKI_PAGE_DIRS = {"concepts", "entities", "skills", "references", "synthesis", "journal", "projects"}
@@ -55,7 +56,7 @@ SOURCE_DETAIL_TRIGGERS = {
 }
 SOURCE_DETAIL_MAX_CHARS = 200_000
 SOURCE_DETAIL_SNIPPET_CHARS = 900
-QUERY_OUTPUT_DIR = "query"
+QUERY_OUTPUT_FILENAME = "answer.md"
 
 
 @dataclass(frozen=True)
@@ -161,8 +162,15 @@ def should_save_query_output(args: Any) -> bool:
     return bool(getattr(args, "output", None) or getattr(args, "save", True))
 
 
-def write_query_output(vault: Path, question: str, answer: str, output: str | None = None) -> Path:
-    path = resolve_query_output_path(vault, question, output)
+def write_query_output(
+    vault: Path,
+    question: str,
+    answer: str,
+    output: str | None = None,
+    *,
+    run_dir: Path | None = None,
+) -> Path:
+    path = resolve_query_output_path(vault, question, output, run_dir=run_dir)
     now = datetime.now(timezone.utc)
     title = f"Query - {trim_text(question, 80).replace(chr(10), ' ')}"
     body = "\n".join(
@@ -191,7 +199,7 @@ def write_query_output(vault: Path, question: str, answer: str, output: str | No
     return path
 
 
-def resolve_query_output_path(vault: Path, question: str, output: str | None = None) -> Path:
+def resolve_query_output_path(vault: Path, question: str, output: str | None = None, *, run_dir: Path | None = None) -> Path:
     root = vault.resolve()
     if output:
         path = Path(output).expanduser()
@@ -205,8 +213,14 @@ def resolve_query_output_path(vault: Path, question: str, output: str | None = N
         return unique_path(candidate)
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    target_dir = run_dir if run_dir is not None else create_query_run_dir(vault, question, stamp=stamp)
+    return unique_path(target_dir / QUERY_OUTPUT_FILENAME)
+
+
+def create_query_run_dir(vault: Path, question: str, *, stamp: str | None = None) -> Path:
+    run_stamp = stamp or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     slug = slugify(question) or "query"
-    return unique_path(root / QUERY_OUTPUT_DIR / f"{stamp}-{slug}.md")
+    return unique_dir(runs_root(vault) / f"query-{run_stamp}-{slug}")
 
 
 def unique_path(path: Path) -> Path:

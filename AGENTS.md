@@ -23,6 +23,7 @@ $OBSIDIAN_VAULT_PATH/
 ├── hot.md                  # Session hot cache — ~500-word semantic snapshot of recent activity
 ├── .manifest.json          # Tracks every ingested source: path, timestamps, pages produced
 ├── _sources/               # Local-only source archive: originals, extracted text, figures, metadata
+├── _runs/                  # Local-only run packets, plans, reports, and saved query/lint outputs
 ├── _meta/
 │   ├── taxonomy.md         # Controlled tag vocabulary
 │   └── *.base              # Obsidian Bases dashboard definitions (wiki-dashboard skill)

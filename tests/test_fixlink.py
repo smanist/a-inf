@@ -55,7 +55,7 @@ def make_vault(tmp_path: Path) -> Path:
 def build_packet(vault: Path, config: dict[str, str] | None = None) -> dict[str, object]:
     config = config or {"OBSIDIAN_LINK_FORMAT": "wikilink"}
     lint_packet = lint.build_lint_packet(vault, config)
-    return fixlink.build_fixlink_packet(vault, config, lint_packet, vault / ".a-inf" / "runs" / "repair_plan.json")
+    return fixlink.build_fixlink_packet(vault, config, lint_packet, vault / "_runs" / "repair_plan.json")
 
 
 def test_fixlink_candidates_include_exact_mentions_and_skip_existing_links(tmp_path: Path) -> None:

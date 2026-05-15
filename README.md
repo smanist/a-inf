@@ -52,6 +52,7 @@ repo/
 │   └── taxonomy.md
 ├── _raw/
 ├── _sources/                # local-only archived originals and extracted detail text
+├── _runs/                   # local-only run packets, plans, reports, and saved query/lint outputs
 ├── .obsidian/
 ├── .agents/
 │   └── skills/              # symlinks to bundled workflow skills
@@ -63,7 +64,6 @@ repo/
 ├── journal/
 ├── ideas/
 ├── projects/
-└── query/                   # saved a-inf query answers tagged #a-inf
 ```
 
 If `AGENTS.md` already exists, `a-inf init` appends a small marked `a-inf` section instead of replacing the file. Pass `--no-agents` to skip that. Pass `--no-gitignore` to leave `.gitignore` untouched.
@@ -77,13 +77,13 @@ If `AGENTS.md` already exists, `a-inf init` appends a small marked `a-inf` secti
 | `a-inf ingest <source...>` | Hybrid deterministic document and URL ingest |
 | `a-inf ingest <url>` | Fetch with `defuddle`, then run hybrid ingest |
 | `a-inf info` | Print effective config, source roots, raw dir, QMD collections, and related settings |
-| `a-inf query <question>` | Answer from the compiled vault and save it as `query/<timestamp>-<question>.md` with the `a-inf` tag |
+| `a-inf query <question>` | Answer from the compiled vault and save it as `_runs/query-<timestamp>-<question>/answer.md` with the `a-inf` tag |
 | `a-inf query --no-save <question>` | Print the answer without saving a Markdown file |
 | `a-inf status` | Show ingest state and deltas locally |
 | `a-inf insights` | Analyze hubs, bridges, and graph structure |
 | `a-inf update` | Sync current project knowledge into the vault |
 | `a-inf history` | Mine local Codex history from `~/.codex` |
-| `a-inf lint` | Audit links, metadata, stale pages, and orphans |
+| `a-inf lint` | Audit links, metadata, stale pages, and orphans, and save Markdown findings inside its `_runs/lint-*` run folder with the `a-inf` tag |
 | `a-inf rebuild` | Archive, rebuild, or restore |
 | `a-inf export` | Export the graph |
 | `a-inf research <topic>` | Research and file a topic |
@@ -104,7 +104,7 @@ Most command dispatch is intentionally thin during this migration, but document 
 a-inf ingest paper-xx
 ```
 
-selects new or modified sources, writes a run packet under `.a-inf/runs/`, asks Codex to create `.a-inf/runs/<run-id>/plan.json`, validates the JSON, then applies page, manifest, index, log, and hot-cache updates deterministically. URL sources are fetched with `defuddle` before planning and land under `references/`; PDF sources can include cached MinerU markdown under `.a-inf/mineru/`; exports, logs, and transcripts use the same hybrid ingest path.
+selects new or modified sources, writes a run packet under `_runs/`, asks Codex to create `_runs/<run-id>/plan.json`, validates the JSON, then applies page, manifest, index, log, and hot-cache updates deterministically. URL sources are fetched with `defuddle` before planning and land under `references/`; PDF sources can include cached MinerU markdown under `.a-inf/mineru/`; exports, logs, and transcripts use the same hybrid ingest path.
 
 The default mode is append. Full and raw modes are available:
 
@@ -117,7 +117,7 @@ Use `a-inf info` to inspect the raw config files and effective settings, `--sand
 
 Commands that can be fully deterministic should move into Python over time. `a-inf status` is deterministic local Python, and `a-inf insights` is deterministic graph analysis with optional Codex explanation enrichment. Commands that require synthesis can keep using Codex behind the CLI.
 
-`a-inf lint --json` prints the full health packet, including deterministic findings and semantic candidates. Plain `a-inf lint` renders human Markdown and hides raw semantic candidates unless Codex promotes them. Use `a-inf lint --no-codex` for deterministic-only output, `--semantic-scope broad` to allow wider semantic review, and `--no-log` to avoid appending the default `LINT` entry to `log.md`.
+`a-inf lint --json` prints the full health packet, including deterministic findings and semantic candidates. Plain `a-inf lint` renders human Markdown, saves the report to `_runs/lint-<timestamp>/lint-findings.md` with the `a-inf` tag, and hides raw semantic candidates unless Codex promotes them. Use `a-inf lint --no-save` to skip the saved report, `--output _runs/custom-lint.md` to choose the saved path, `--no-codex` for deterministic-only output, `--semantic-scope broad` to allow wider semantic review, and `--no-log` to avoid appending the default `LINT` entry to `log.md`.
 
 ## Configuration
 

@@ -29,10 +29,10 @@ VAULT_DIRS = [
     "journal",
     "projects",
     "ideas",
-    "query",
     "_archives",
     "_raw",
     "_sources",
+    "_runs",
     "_meta",
     ".obsidian",
     str(LOCAL_SKILLS_DIR),
@@ -47,7 +47,6 @@ TRACKED_SCAFFOLD_DIRS = [
     "journal",
     "projects",
     "ideas",
-    "query",
     "_archives",
 ]
 
@@ -226,6 +225,23 @@ def build_parser() -> argparse.ArgumentParser:
                 action="store_true",
                 help="Do not append the default LINT entry to log.md.",
             )
+            cmd.add_argument(
+                "--save",
+                action="store_true",
+                default=True,
+                help="Save the rendered lint findings as Markdown inside the lint run folder under _runs/. This is the default.",
+            )
+            cmd.add_argument(
+                "--no-save",
+                dest="save",
+                action="store_false",
+                help="Print the lint findings without saving them to the vault.",
+            )
+            cmd.add_argument(
+                "--output",
+                default=None,
+                help="Vault-relative Markdown path for saved output. Defaults to _runs/lint-<timestamp>/lint-findings.md.",
+            )
         if name == "fixlink":
             cmd.add_argument(
                 "--json",
@@ -371,7 +387,7 @@ def build_parser() -> argparse.ArgumentParser:
                 "--save",
                 action="store_true",
                 default=True,
-                help="Save the synthesized answer as a Markdown file under query/ in the vault. This is the default.",
+                help="Save the synthesized answer as Markdown inside a query run folder under _runs/. This is the default.",
             )
             cmd.add_argument(
                 "--no-save",
@@ -382,7 +398,7 @@ def build_parser() -> argparse.ArgumentParser:
             cmd.add_argument(
                 "--output",
                 default=None,
-                help="Vault-relative Markdown path for saved output. Defaults to query/<timestamp>-<question>.md.",
+                help="Vault-relative Markdown path for saved output. Defaults to _runs/query-<timestamp>-<question>/answer.md.",
             )
         cmd.add_argument("args", nargs="*", help="Arguments passed to the workflow.")
         add_dispatch_options(cmd)
@@ -1389,6 +1405,7 @@ def ensure_gitignore_section(path: Path) -> None:
         ".DS_Store",
         "_raw/",
         "_sources/",
+        "_runs/",
         ".env",
         ".a-inf/",
         ".obsidian/workspace.json",

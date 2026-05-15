@@ -13,14 +13,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from a_inf.ingest import parse_datetime, parse_frontmatter_file, write_json
+from a_inf.ingest import parse_datetime, parse_frontmatter_file, render_page, write_json
 from a_inf.managed_files import A_INF_TAG, ensure_managed_tag, managed_tags
+from a_inf.runs import timestamped_run_dir
 
 
 CONTENT_DIRS = ["concepts", "entities", "skills", "references", "synthesis", "journal", "projects", "misc"]
 REQUIRED_FRONTMATTER = {"title", "category", "tags", "sources", "created", "updated"}
 VALID_LIFECYCLES = {"draft", "reviewed", "verified", "disputed", "archived"}
 SEMANTIC_REVIEW_KEYS = {"status", "scope", "findings", "repair_recommendations", "reviewed_candidate_ids", "warnings"}
+LINT_OUTPUT_FILENAME = "lint-findings.md"
 
 
 @dataclass(frozen=True)
@@ -64,8 +66,92 @@ def run_lint(args: Any, vault: Path, config: dict[str, str]) -> int:
     if getattr(args, "json", False):
         print(json.dumps(packet, indent=2, sort_keys=True))
     else:
-        print(render_lint_markdown(packet))
+        markdown = render_lint_markdown(packet)
+        print(markdown)
+        if should_save_lint_output(args):
+            try:
+                output_path = write_lint_output(vault, packet, markdown, getattr(args, "output", None), run_dir=run_dir)
+            except ValueError as exc:
+                print(f"Could not save lint output: {exc}", file=sys.stderr)
+                return 2
+            except OSError as exc:
+                print(f"Could not save lint output: {exc}", file=sys.stderr)
+                return 1
+            print(f"Saved lint output to {output_path.relative_to(vault)}")
     return 0
+
+
+def should_save_lint_output(args: Any) -> bool:
+    return bool(getattr(args, "output", None) or getattr(args, "save", True))
+
+
+def write_lint_output(
+    vault: Path,
+    packet: dict[str, Any],
+    markdown: str,
+    output: str | None = None,
+    *,
+    run_dir: Path | None = None,
+) -> Path:
+    path = resolve_lint_output_path(vault, output, run_dir=run_dir)
+    now = datetime.now(timezone.utc)
+    summary = packet.get("summary", {})
+    review = packet.get("semantic_review") if isinstance(packet.get("semantic_review"), dict) else {}
+    issue_count = summary.get("issues_found", 0)
+    body = "\n".join(
+        [
+            "# Lint Findings",
+            "",
+            f"**Command:** `a-inf lint`",
+            f"**Generated:** {packet.get('generated_at', now.isoformat())}",
+            f"**Issues found:** {issue_count}",
+            f"**Semantic review:** {review.get('status', 'unknown')} ({review.get('scope', 'unknown')})",
+            "",
+            markdown.strip(),
+        ]
+    )
+    page = render_page(
+        {
+            "title": f"Lint Findings - {now.strftime('%Y-%m-%d %H:%M UTC')}",
+            "category": "query",
+            "tags": [A_INF_TAG],
+            "sources": ["a-inf lint"],
+            "created": now.date().isoformat(),
+            "updated": now.date().isoformat(),
+        },
+        body,
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(page, encoding="utf-8")
+    return path
+
+
+def resolve_lint_output_path(vault: Path, output: str | None = None, *, run_dir: Path | None = None) -> Path:
+    root = vault.resolve()
+    if output:
+        path = Path(output).expanduser()
+        candidate = path if path.is_absolute() else root / path
+        if candidate.suffix != ".md":
+            candidate = candidate.with_suffix(".md")
+        try:
+            candidate.resolve().relative_to(root)
+        except ValueError as exc:
+            raise ValueError("output path must stay inside the vault") from exc
+        return unique_path(candidate)
+
+    target_dir = run_dir if run_dir is not None else timestamped_run_dir(vault, "lint")
+    return unique_path(target_dir / LINT_OUTPUT_FILENAME)
+
+
+def unique_path(path: Path) -> Path:
+    if not path.exists():
+        return path
+    suffix = 2
+    while True:
+        candidate = path.with_name(f"{path.stem}-{suffix}{path.suffix}")
+        if not candidate.exists():
+            return candidate
+        suffix += 1
 
 
 def build_lint_packet(vault: Path, config: dict[str, str] | None = None) -> dict[str, Any]:
@@ -756,14 +842,7 @@ def append_lint_log(vault: Path, packet: dict[str, Any]) -> None:
 
 
 def create_lint_run_dir(vault: Path) -> Path:
-    run_dir = vault / ".a-inf" / "runs" / f"lint-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
-    suffix = 1
-    candidate = run_dir
-    while candidate.exists():
-        suffix += 1
-        candidate = Path(f"{run_dir}-{suffix}")
-    candidate.mkdir(parents=True, exist_ok=True)
-    return candidate
+    return timestamped_run_dir(vault, "lint")
 
 
 def extract_wikilinks(text: str) -> list[dict[str, Any]]:

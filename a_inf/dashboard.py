@@ -16,6 +16,7 @@ from a_inf import lint
 from a_inf.ingest import load_wiki_config, write_json
 from a_inf.managed_files import ensure_managed_tag, managed_tags
 from a_inf.qmd import ensure_qmd_collection, qmd_env, sync_qmd
+from a_inf.runs import timestamped_run_dir
 
 
 VALID_RECIPES = {
@@ -689,13 +690,7 @@ def append_log(vault: Path, spec: dict[str, Any]) -> None:
 
 
 def create_run(vault: Path) -> Run:
-    base = vault / ".a-inf" / "runs" / f"dashboard-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
-    candidate = base
-    suffix = 2
-    while candidate.exists():
-        candidate = Path(f"{base}-{suffix}")
-        suffix += 1
-    candidate.mkdir(parents=True, exist_ok=False)
+    candidate = timestamped_run_dir(vault, "dashboard")
     return Run(
         run_dir=candidate,
         packet_path=candidate / "packet.json",

@@ -99,7 +99,7 @@ def test_build_tag_packet_reports_deterministic_findings(tmp_path: Path) -> None
     write_page(vault, "concepts/c.md", tag_values=[])
     write_page(vault, "concepts/d.md", tag_values=["react", "systems", "ml", "retro", "generative-art", "extra"])
 
-    packet = tags.build_tag_packet(vault, {}, vault / ".a-inf" / "runs" / "tags" / "tag_plan.json")
+    packet = tags.build_tag_packet(vault, {}, vault / "_runs" / "tags" / "tag_plan.json")
 
     assert packet["summary"]["pages_scanned"] == 4
     assert packet["findings"]["alias_tags"] == [{"tag": "nextjs", "canonical": "react", "pages": 1}]
@@ -142,7 +142,7 @@ def test_validate_tag_plan_rejects_invalid_edits(tmp_path: Path) -> None:
 def test_fix_applies_latest_plan_and_updates_log_hot_and_taxonomy(tmp_path: Path, monkeypatch, capsys) -> None:
     vault = make_vault(tmp_path)
     write_page(vault, "concepts/a.md", tag_values=["nextjs", "visibility/internal"])
-    run_dir = vault / ".a-inf" / "runs" / "tags-20300101T000000Z"
+    run_dir = vault / "_runs" / "tags-20300101T000000Z"
     run_dir.mkdir(parents=True)
     (run_dir / "tag_plan.json").write_text(
         json.dumps(

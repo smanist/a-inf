@@ -93,7 +93,7 @@ def test_build_insights_packet_computes_deterministic_graph_sections(tmp_path: P
         encoding="utf-8",
     )
 
-    packet = insights.build_insights_packet(vault, {}, vault / ".a-inf/runs/insights/explanations.json")
+    packet = insights.build_insights_packet(vault, {}, vault / "_runs/insights/explanations.json")
 
     assert packet["summary"]["pages_scanned"] == 20
     assert packet["anchors"][0]["page"] == "entities/sink.md"

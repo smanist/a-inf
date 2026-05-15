@@ -218,11 +218,11 @@ def test_cli_query_routes_to_deterministic_engine(tmp_path: Path, monkeypatch) -
 def test_cli_query_saves_by_default_and_accepts_output() -> None:
     parser = cli.build_parser()
 
-    args = parser.parse_args(["query", "--output", "query/rate-limits.md", "rate", "limits"])
+    args = parser.parse_args(["query", "--output", "_runs/rate-limits.md", "rate", "limits"])
 
     assert args.alias == "query"
     assert args.save is True
-    assert args.output == "query/rate-limits.md"
+    assert args.output == "_runs/rate-limits.md"
     assert args.args == ["rate", "limits"]
 
 
@@ -242,7 +242,9 @@ def test_write_query_output_creates_a_inf_markdown(tmp_path: Path) -> None:
 
     output = query.write_query_output(vault, "What do I know about QMD?", "Answer with [[concepts/qmd]].")
 
-    assert output.parent == vault / "query"
+    assert output.parent.parent == vault / "_runs"
+    assert output.parent.name.startswith("query-")
+    assert output.name == "answer.md"
     text = output.read_text(encoding="utf-8")
     assert "category: \"query\"" in text
     assert "tags: [\"a-inf\"]" in text
@@ -296,7 +298,7 @@ def test_run_query_default_save_captures_codex_output(tmp_path: Path, monkeypatc
             codex_bin="codex",
             sandbox="workspace-write",
             add_dir=[],
-            output="query/answer.md",
+            output=None,
         ),
         vault,
         {"QMD_WIKI_COLLECTION": "vault"},
@@ -305,8 +307,10 @@ def test_run_query_default_save_captures_codex_output(tmp_path: Path, monkeypatc
     output = capsys.readouterr().out
     assert result == 0
     assert "Synthesized answer." in output
-    assert "Saved query output to query/answer.md" in output
-    assert "Synthesized answer." in (vault / "query" / "answer.md").read_text(encoding="utf-8")
+    assert "Saved query output to _runs/query-" in output
+    saved = list((vault / "_runs").glob("query-*/answer.md"))
+    assert len(saved) == 1
+    assert "Synthesized answer." in saved[0].read_text(encoding="utf-8")
 
 
 def test_print_prompt_contains_packet_without_codex(tmp_path: Path, monkeypatch, capsys) -> None:

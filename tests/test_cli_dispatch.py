@@ -319,6 +319,16 @@ def test_cli_parser_accepts_insights_flags() -> None:
     assert args.args == ["hubs"]
 
 
+def test_cli_parser_accepts_lint_save_flags() -> None:
+    parser = cli.build_parser()
+
+    args = parser.parse_args(["lint", "--no-save", "--output", "_runs/lint-report.md"])
+
+    assert args.alias == "lint"
+    assert args.save is False
+    assert args.output == "_runs/lint-report.md"
+
+
 def test_cli_parser_accepts_colorize_flags() -> None:
     parser = cli.build_parser()
 

@@ -14,6 +14,7 @@ from typing import Any
 from a_inf.ingest import load_wiki_config, parse_frontmatter_file, read_optional, write_json
 from a_inf.managed_files import A_INF_TAG
 from a_inf.qmd import collection_name_for_vault, qmd_env, resolve_qmd, run_qmd
+from a_inf.runs import timestamped_run_dir
 
 
 WIKI_PAGE_DIRS = ["concepts", "entities", "skills", "references", "synthesis", "journal", "projects"]
@@ -428,13 +429,7 @@ def print_report(report: dict[str, Any], *, json_output: bool) -> None:
 
 def create_run(vault: Path, idea: str) -> Run:
     output = unique_output_path(vault, idea)
-    base = vault / ".a-inf" / "runs" / f"ideate-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
-    candidate = base
-    suffix = 1
-    while candidate.exists():
-        suffix += 1
-        candidate = Path(f"{base}-{suffix}")
-    candidate.mkdir(parents=True, exist_ok=True)
+    candidate = timestamped_run_dir(vault, "ideate")
     return Run(
         run_dir=candidate,
         packet_path=candidate / "packet.json",

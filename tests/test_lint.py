@@ -71,6 +71,8 @@ def lint_args(**overrides: object) -> SimpleNamespace:
         "no_codex": True,
         "print_prompt": False,
         "no_log": True,
+        "save": True,
+        "output": None,
         "codex_bin": "codex",
         "sandbox": "workspace-write",
         "add_dir": [],
@@ -139,6 +141,58 @@ def test_lint_markdown_no_codex_hides_candidate_sections(tmp_path: Path, monkeyp
     assert "Semantic review was not completed" in output
     assert "Potential Contradictions" not in output
     assert "contradiction_candidates" not in output
+
+
+def test_lint_markdown_saves_run_tagged_report_by_default(tmp_path: Path, monkeypatch, capsys) -> None:
+    vault = make_vault(tmp_path)
+    write_page(vault, "concepts/a.md", body="See [[missing]].")
+    monkeypatch.chdir(vault)
+
+    result = cli.cmd_dispatch(lint_args(alias="lint", no_codex=True, no_log=True))
+
+    assert result == 0
+    output = capsys.readouterr().out
+    assert "Saved lint output to _runs/lint-" in output
+    saved = list((vault / "_runs").glob("lint-*/lint-findings.md"))
+    assert len(saved) == 1
+    text = saved[0].read_text(encoding="utf-8")
+    assert 'category: "query"' in text
+    assert 'tags: ["a-inf"]' in text
+    assert 'sources: ["a-inf lint"]' in text
+    assert "# Lint Findings" in text
+    assert "Broken Wikilinks" in text
+
+
+def test_lint_markdown_accepts_output_and_no_save(tmp_path: Path, monkeypatch, capsys) -> None:
+    vault = make_vault(tmp_path)
+    write_page(vault, "concepts/a.md", body="See [[missing]].")
+    monkeypatch.chdir(vault)
+
+    result = cli.cmd_dispatch(
+        lint_args(alias="lint", no_codex=True, no_log=True, output="_runs/custom-lint")
+    )
+
+    assert result == 0
+    assert (vault / "_runs" / "custom-lint.md").is_file()
+    capsys.readouterr()
+
+    result = cli.cmd_dispatch(lint_args(alias="lint", no_codex=True, no_log=True, save=False))
+
+    assert result == 0
+    assert len(list((vault / "_runs").glob("*.md"))) == 1
+    assert "Saved lint output" not in capsys.readouterr().out
+
+
+def test_lint_json_does_not_save_markdown_report(tmp_path: Path, monkeypatch, capsys) -> None:
+    vault = make_vault(tmp_path)
+    write_page(vault, "concepts/a.md", body="See [[missing]].")
+    monkeypatch.chdir(vault)
+
+    result = cli.cmd_dispatch(lint_args(alias="lint", json=True))
+
+    assert result == 0
+    json.loads(capsys.readouterr().out)
+    assert not (vault / "query").exists()
 
 
 def test_default_lint_invokes_codex_with_one_hop_scope_and_logs(tmp_path: Path, monkeypatch, capsys) -> None:

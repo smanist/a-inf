@@ -73,10 +73,10 @@ def test_init_creates_vault_structure_and_local_skill_links(tmp_path: Path, monk
         "journal",
         "projects",
         "ideas",
-        "query",
         "_archives",
         "_raw",
         "_sources",
+        "_runs",
         "_meta",
         ".obsidian",
         ".agents",
@@ -127,6 +127,7 @@ def test_init_creates_vault_structure_and_local_skill_links(tmp_path: Path, monk
     assert ".DS_Store" in gitignore
     assert "_raw/" in gitignore
     assert "_sources/" in gitignore
+    assert "_runs/" in gitignore
     assert ".env" in gitignore
     assert ".a-inf/" in gitignore
     assert ".obsidian/workspace.json" in gitignore
@@ -253,6 +254,7 @@ def test_init_upgrades_existing_gitignore_section(tmp_path: Path, monkeypatch) -
     assert ".DS_Store" in gitignore
     assert "_raw/" in gitignore
     assert "_sources/" in gitignore
+    assert "_runs/" in gitignore
     assert ".env" in gitignore
     assert ".a-inf/" in gitignore
     assert ".obsidian/workspace.json" in gitignore

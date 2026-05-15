@@ -16,6 +16,7 @@ from a_inf import lint
 from a_inf.ingest import load_wiki_config, parse_frontmatter_file, render_frontmatter, write_json
 from a_inf.managed_files import ensure_managed_tag, managed_tags
 from a_inf.qmd import ensure_qmd_collection, qmd_env, sync_qmd
+from a_inf.runs import timestamped_run_dir
 
 
 MAX_CANDIDATES = 200
@@ -785,13 +786,7 @@ def print_report(report: dict[str, Any], *, json_output: bool) -> None:
 
 
 def create_run(vault: Path) -> Run:
-    base = vault / ".a-inf" / "runs" / f"fixlink-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
-    candidate = base
-    suffix = 1
-    while candidate.exists():
-        suffix += 1
-        candidate = Path(f"{base}-{suffix}")
-    candidate.mkdir(parents=True, exist_ok=True)
+    candidate = timestamped_run_dir(vault, "fixlink")
     return Run(
         run_dir=candidate,
         packet_path=candidate / "packet.json",

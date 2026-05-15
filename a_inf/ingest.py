@@ -15,6 +15,8 @@ from datetime import datetime, timezone
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
+
+from a_inf.runs import runs_root
 import tomllib
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse, unquote
@@ -1035,7 +1037,7 @@ def parse_datetime(value: str) -> datetime | None:
 
 def make_run(vault: Path) -> IngestRun:
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-    run_dir = vault / ".a-inf" / "runs" / run_id
+    run_dir = runs_root(vault) / run_id
     return IngestRun(run_id=run_id, run_dir=run_dir, plan_path=run_dir / "plan.json")
 
 
@@ -2333,9 +2335,9 @@ def is_relative_to(path: Path, root: Path) -> bool:
 
 
 def prune_runs(vault: Path, keep: int = 20) -> None:
-    runs_root = vault / ".a-inf" / "runs"
-    if not runs_root.exists():
+    root = runs_root(vault)
+    if not root.exists():
         return
-    runs = sorted([path for path in runs_root.iterdir() if path.is_dir()], key=lambda path: path.name, reverse=True)
+    runs = sorted([path for path in root.iterdir() if path.is_dir()], key=lambda path: path.name, reverse=True)
     for old in runs[keep:]:
         shutil.rmtree(old)

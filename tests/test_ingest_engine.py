@@ -279,7 +279,7 @@ def test_ingest_print_prompt_emits_packet_without_writes(tmp_path: Path, monkeyp
     assert "# Obsidian Ingest Planner" in packet["codex_prompt"]
     assert "do not run `qmd query`" in packet["codex_prompt"]
     assert "qmd search --json -n 5" in packet["codex_prompt"]
-    assert not (vault / ".a-inf" / "runs").exists()
+    assert not (vault / "_runs").exists()
 
 
 def test_html_extract_extracts_title_headings_sections_and_visible_text() -> None:
@@ -392,7 +392,7 @@ def test_url_source_packet_uses_defuddle_markdown(tmp_path: Path, monkeypatch, c
     assert source["target_path"] == "references/web-example-com-article.md"
     assert source["content_hash"] == ingest.hash_bytes(markdown.encode("utf-8"))
     assert "html_markdown" in packet["codex_prompt"]
-    assert not (vault / ".a-inf" / "runs").exists()
+    assert not (vault / "_runs").exists()
 
 
 def test_url_source_packet_extracts_embedded_figures(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -474,7 +474,7 @@ def test_url_ingest_fails_before_planning_when_defuddle_is_missing(tmp_path: Pat
     monkeypatch.setattr(ingest, "call_codex_exec", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("codex called")))
 
     assert cli.cmd_dispatch(args) == 1
-    assert not (vault / ".a-inf" / "runs").exists()
+    assert not (vault / "_runs").exists()
 
 
 def test_url_ingest_fails_before_planning_when_defuddle_fails_or_empty(tmp_path: Path, monkeypatch) -> None:
@@ -493,7 +493,7 @@ def test_url_ingest_fails_before_planning_when_defuddle_fails_or_empty(tmp_path:
     )
 
     assert cli.cmd_dispatch(args) == 1
-    assert not (vault / ".a-inf" / "runs").exists()
+    assert not (vault / "_runs").exists()
 
     monkeypatch.setattr(
         ingest.subprocess,
@@ -502,7 +502,7 @@ def test_url_ingest_fails_before_planning_when_defuddle_fails_or_empty(tmp_path:
     )
 
     assert cli.cmd_dispatch(args) == 1
-    assert not (vault / ".a-inf" / "runs").exists()
+    assert not (vault / "_runs").exists()
 
 
 def test_pdf_source_packet_uses_mineru_markdown(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -578,7 +578,7 @@ def test_pdf_ingest_explicit_mineru_fails_when_missing(tmp_path: Path, monkeypat
     monkeypatch.setattr(ingest.subprocess, "run", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("subprocess.run called")))
 
     assert cli.cmd_dispatch(args) == 1
-    assert not (vault / ".a-inf" / "runs").exists()
+    assert not (vault / "_runs").exists()
 
 
 def test_ingest_valid_plan_applies_pages_and_special_files(tmp_path: Path, monkeypatch) -> None:
@@ -1111,7 +1111,7 @@ updated: "2026-05-01T00:00:00+00:00"
 
 def test_prune_runs_keeps_latest_twenty(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
-    root = vault / ".a-inf" / "runs"
+    root = vault / "_runs"
     for index in range(25):
         (root / f"20260505T0000{index:02d}Z").mkdir(parents=True)
 

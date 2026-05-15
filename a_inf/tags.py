@@ -16,6 +16,7 @@ from a_inf import lint
 from a_inf.ingest import load_wiki_config, parse_frontmatter_file, read_optional, render_frontmatter, write_json
 from a_inf.managed_files import A_INF_TAG, ensure_managed_tag, managed_tags
 from a_inf.qmd import ensure_qmd_collection, qmd_env, sync_qmd
+from a_inf.runs import runs_root, timestamped_run_dir
 
 
 VALID_ACTIONS = {"update", "skip", "add_taxonomy_tag"}
@@ -456,7 +457,7 @@ def append_taxonomy_tags(vault: Path, plan: ValidatedTagPlan) -> int:
 
 
 def latest_plan_path(vault: Path) -> Path | None:
-    runs = vault / ".a-inf" / "runs"
+    runs = runs_root(vault)
     if not runs.exists():
         return None
     for run_dir in sorted(runs.glob("tags-*"), key=lambda path: path.name, reverse=True):
@@ -467,13 +468,7 @@ def latest_plan_path(vault: Path) -> Path | None:
 
 
 def create_run(vault: Path) -> Run:
-    base = vault / ".a-inf" / "runs" / f"tags-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
-    suffix = 1
-    candidate = base
-    while candidate.exists():
-        suffix += 1
-        candidate = Path(f"{base}-{suffix}")
-    candidate.mkdir(parents=True, exist_ok=True)
+    candidate = timestamped_run_dir(vault, "tags")
     return Run(
         run_dir=candidate,
         packet_path=candidate / "packet.json",

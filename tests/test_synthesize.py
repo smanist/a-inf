@@ -99,7 +99,7 @@ def test_packet_uses_raw_lint_candidates(tmp_path: Path) -> None:
         {"OBSIDIAN_LINK_FORMAT": "wikilink"},
         lint_packet,
         lint.semantic_status("not_run", "one-hop", []),
-        vault / ".a-inf" / "runs" / "synthesis_plan.json",
+        vault / "_runs" / "synthesis_plan.json",
         [],
     )
 
@@ -111,7 +111,7 @@ def test_packet_uses_raw_lint_candidates(tmp_path: Path) -> None:
 def test_packet_prefers_fresh_semantic_review(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     add_raw_gap(vault)
-    run_dir = vault / ".a-inf" / "runs" / "lint-20300101T000000Z"
+    run_dir = vault / "_runs" / "lint-20300101T000000Z"
     run_dir.mkdir(parents=True)
     packet = lint.build_lint_packet(vault, {})
     packet["generated_at"] = "2030-01-01T00:00:00+00:00"
@@ -152,7 +152,7 @@ def test_packet_prefers_fresh_semantic_review(tmp_path: Path) -> None:
 def test_stale_lint_bundle_falls_back_to_inline_lint(tmp_path: Path) -> None:
     vault = make_vault(tmp_path)
     add_raw_gap(vault)
-    run_dir = vault / ".a-inf" / "runs" / "lint-20000101T000000Z"
+    run_dir = vault / "_runs" / "lint-20000101T000000Z"
     run_dir.mkdir(parents=True)
     packet = lint.build_lint_packet(vault, {})
     packet["generated_at"] = "2000-01-01T00:00:00+00:00"
@@ -184,7 +184,7 @@ def test_topic_filter_and_existing_synthesis_exclusion(tmp_path: Path) -> None:
         {"OBSIDIAN_LINK_FORMAT": "wikilink"},
         lint_packet,
         lint.semantic_status("not_run", "one-hop", []),
-        vault / ".a-inf" / "runs" / "synthesis_plan.json",
+        vault / "_runs" / "synthesis_plan.json",
         ["alpha"],
     )
 
@@ -199,7 +199,7 @@ def test_validate_rejects_unknown_and_deterministic_fields(tmp_path: Path) -> No
         {"OBSIDIAN_LINK_FORMAT": "wikilink"},
         lint.build_lint_packet(vault, {}),
         lint.semantic_status("not_run", "one-hop", []),
-        vault / ".a-inf" / "runs" / "synthesis_plan.json",
+        vault / "_runs" / "synthesis_plan.json",
         [],
     )
 
@@ -238,7 +238,7 @@ def test_apply_creates_page_backlinks_index_log_hot_and_manifest(tmp_path: Path)
         config,
         lint.build_lint_packet(vault, {}),
         lint.semantic_status("not_run", "one-hop", []),
-        vault / ".a-inf" / "runs" / "synthesis_plan.json",
+        vault / "_runs" / "synthesis_plan.json",
         [],
     )
     candidate_id = packet["candidates"][0]["candidate_id"]
