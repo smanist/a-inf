@@ -215,6 +215,100 @@ def test_cli_query_routes_to_deterministic_engine(tmp_path: Path, monkeypatch) -
     assert calls == [(vault, {"QMD_WIKI_COLLECTION": "vault"}, ["what", "now"])]
 
 
+def test_cli_query_saves_by_default_and_accepts_output() -> None:
+    parser = cli.build_parser()
+
+    args = parser.parse_args(["query", "--output", "query/rate-limits.md", "rate", "limits"])
+
+    assert args.alias == "query"
+    assert args.save is True
+    assert args.output == "query/rate-limits.md"
+    assert args.args == ["rate", "limits"]
+
+
+def test_cli_query_accepts_no_save() -> None:
+    parser = cli.build_parser()
+
+    args = parser.parse_args(["query", "--no-save", "rate", "limits"])
+
+    assert args.save is False
+    assert args.output is None
+    assert args.args == ["rate", "limits"]
+
+
+def test_write_query_output_creates_a_inf_markdown(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+
+    output = query.write_query_output(vault, "What do I know about QMD?", "Answer with [[concepts/qmd]].")
+
+    assert output.parent == vault / "query"
+    text = output.read_text(encoding="utf-8")
+    assert "category: \"query\"" in text
+    assert "tags: [\"a-inf\"]" in text
+    assert "sources: [\"a-inf query\"]" in text
+    assert "**Question:** What do I know about QMD?" in text
+    assert "Answer with [[concepts/qmd]]." in text
+
+
+def test_write_query_output_rejects_paths_outside_vault(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+
+    try:
+        query.write_query_output(vault, "Question", "Answer", str(tmp_path / "outside.md"))
+    except ValueError as exc:
+        assert "inside the vault" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")
+
+
+def test_run_query_default_save_captures_codex_output(tmp_path: Path, monkeypatch, capsys) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    write_page(vault, "concepts/query.md", title="Query", tags=["wiki"], summary="Query path.")
+    monkeypatch.setattr(query, "ensure_qmd_collection", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(query, "resolve_qmd", lambda _config, _vault: fake_qmd(vault))
+    monkeypatch.setattr(
+        query,
+        "run_qmd",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            ["/usr/local/bin/qmd"],
+            0,
+            stdout=json.dumps(
+                [{"file": "qmd://vault/concepts/query.md", "score": 0.8, "snippet": "Query packet snippet."}]
+            ),
+            stderr="",
+        ),
+    )
+    monkeypatch.setattr(query.shutil, "which", lambda _name: "/usr/local/bin/codex")
+
+    def fake_run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(["codex"], 0, stdout="Synthesized answer.\n", stderr="")
+
+    monkeypatch.setattr(query.subprocess, "run", fake_run)
+
+    result = query.run_query(
+        SimpleNamespace(
+            args=["what", "do", "I", "know", "about", "query"],
+            print_prompt=False,
+            no_codex=False,
+            codex_bin="codex",
+            sandbox="workspace-write",
+            add_dir=[],
+            output="query/answer.md",
+        ),
+        vault,
+        {"QMD_WIKI_COLLECTION": "vault"},
+    )
+
+    output = capsys.readouterr().out
+    assert result == 0
+    assert "Synthesized answer." in output
+    assert "Saved query output to query/answer.md" in output
+    assert "Synthesized answer." in (vault / "query" / "answer.md").read_text(encoding="utf-8")
+
+
 def test_print_prompt_contains_packet_without_codex(tmp_path: Path, monkeypatch, capsys) -> None:
     vault = tmp_path / "vault"
     vault.mkdir()

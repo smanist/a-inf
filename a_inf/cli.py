@@ -29,6 +29,7 @@ VAULT_DIRS = [
     "journal",
     "projects",
     "ideas",
+    "query",
     "_archives",
     "_raw",
     "_sources",
@@ -46,6 +47,7 @@ TRACKED_SCAFFOLD_DIRS = [
     "journal",
     "projects",
     "ideas",
+    "query",
     "_archives",
 ]
 
@@ -93,6 +95,7 @@ INIT_COMMIT_PATHS = [
     ".manifest.json",
     ".obsidian/app.json",
     ".obsidian/appearance.json",
+    ".obsidian/community-plugins.json",
     ".obsidian/graph.json",
     str(LOCAL_SKILLS_DIR),
     "AGENTS.md",
@@ -161,6 +164,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_dispatch_options(status_parser)
     status_parser.set_defaults(func=cmd_status)
+
+    info_parser = sub.add_parser("info", help="Print effective a-inf configuration.")
+    info_parser.set_defaults(func=cmd_info)
 
     for name in [
         "ingest",
@@ -360,6 +366,24 @@ def build_parser() -> argparse.ArgumentParser:
                 action="store_true",
                 help="Print the final ideation report as JSON instead of Markdown.",
             )
+        if name == "query":
+            cmd.add_argument(
+                "--save",
+                action="store_true",
+                default=True,
+                help="Save the synthesized answer as a Markdown file under query/ in the vault. This is the default.",
+            )
+            cmd.add_argument(
+                "--no-save",
+                dest="save",
+                action="store_false",
+                help="Print the synthesized answer without saving it to the vault.",
+            )
+            cmd.add_argument(
+                "--output",
+                default=None,
+                help="Vault-relative Markdown path for saved output. Defaults to query/<timestamp>-<question>.md.",
+            )
         cmd.add_argument("args", nargs="*", help="Arguments passed to the workflow.")
         add_dispatch_options(cmd)
         cmd.set_defaults(func=cmd_dispatch, alias=name)
@@ -429,9 +453,12 @@ def cmd_init(args: argparse.Namespace) -> int:
             "showFrontmatter": False,
             "defaultViewMode": "preview",
             "livePreview": True,
+            "promptDelete": False,
+            "showUnsupportedFiles": True,
         },
     )
     write_json_if_missing(vault / ".obsidian" / "appearance.json", {"baseFontSize": 16})
+    write_json_if_missing(vault / ".obsidian" / "community-plugins.json", ["obsidian-git", "lean-terminal"])
     write_json_if_missing(vault / ".obsidian" / "graph.json", graph_template())
     write_local_config(vault, skills_source)
     write_file_if_missing(vault / ".env", env_template(vault))
@@ -662,6 +689,15 @@ def cmd_status(args: argparse.Namespace) -> int:
 
     vault = find_vault_root(Path.cwd())
     print(build_status_report(vault))
+    return 0
+
+
+def cmd_info(_args: argparse.Namespace) -> int:
+    from a_inf.ingest import load_wiki_config as load_ingest_config
+    from a_inf.ingest import print_info
+
+    vault = find_vault_root(Path.cwd())
+    print_info(vault, load_ingest_config(vault))
     return 0
 
 
@@ -1349,7 +1385,16 @@ def ensure_agents_section(path: Path) -> None:
 
 
 def ensure_gitignore_section(path: Path) -> None:
-    required_entries = [".DS_Store", "_raw/", "_sources/", ".env", ".a-inf/", "graph.json.backup-*"]
+    required_entries = [
+        ".DS_Store",
+        "_raw/",
+        "_sources/",
+        ".env",
+        ".a-inf/",
+        ".obsidian/workspace.json",
+        ".obsidian/plugins",
+        "graph.json.backup-*",
+    ]
     section = "\n".join(["# a-inf local configuration", *required_entries, ""])
     if path.exists():
         current = path.read_text(encoding="utf-8")
@@ -1481,7 +1526,7 @@ def graph_template() -> dict[str, object]:
 
 def env_template(vault: Path) -> str:
     return f"""OBSIDIAN_VAULT_PATH={vault}
-OBSIDIAN_SOURCES_DIR=
+OBSIDIAN_SOURCES_DIR=_raw
 OBSIDIAN_CATEGORIES=concepts,entities,skills,references,synthesis,journal
 OBSIDIAN_MAX_PAGES_PER_INGEST=15
 CODEX_HISTORY_PATH=

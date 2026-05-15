@@ -11,7 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from a_inf.ingest import parse_datetime, parse_frontmatter_file
+from a_inf.ingest import parse_datetime, parse_frontmatter_file, render_page
+from a_inf.managed_files import A_INF_TAG
 from a_inf.qmd import (
     QmdInfo,
     collection_name_for_vault,
@@ -54,6 +55,7 @@ SOURCE_DETAIL_TRIGGERS = {
 }
 SOURCE_DETAIL_MAX_CHARS = 200_000
 SOURCE_DETAIL_SNIPPET_CHARS = 900
+QUERY_OUTPUT_DIR = "query"
 
 
 @dataclass(frozen=True)
@@ -137,7 +139,92 @@ def run_query(args: Any, vault: Path, config: dict[str, str]) -> int:
     for directory in getattr(args, "add_dir", []) or []:
         command.extend(["--add-dir", str(Path(directory).expanduser().resolve())])
     command.append(prompt)
+    if should_save_query_output(args):
+        result = subprocess.run(command, cwd=vault, env=qmd_env(os.environ, vault), text=True, capture_output=True)
+        if result.stdout:
+            print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
+        if result.stderr:
+            print(result.stderr, end="" if result.stderr.endswith("\n") else "\n", file=sys.stderr)
+        if result.returncode != 0:
+            return result.returncode
+        try:
+            output_path = write_query_output(vault, question, result.stdout, getattr(args, "output", None))
+        except ValueError as exc:
+            print(f"Could not save query output: {exc}", file=sys.stderr)
+            return 2
+        print(f"Saved query output to {output_path.relative_to(vault)}")
+        return 0
     return subprocess.call(command, cwd=vault, env=qmd_env(os.environ, vault))
+
+
+def should_save_query_output(args: Any) -> bool:
+    return bool(getattr(args, "output", None) or getattr(args, "save", True))
+
+
+def write_query_output(vault: Path, question: str, answer: str, output: str | None = None) -> Path:
+    path = resolve_query_output_path(vault, question, output)
+    now = datetime.now(timezone.utc)
+    title = f"Query - {trim_text(question, 80).replace(chr(10), ' ')}"
+    body = "\n".join(
+        [
+            "# Query",
+            "",
+            f"**Question:** {question}",
+            "",
+            answer.strip(),
+        ]
+    )
+    page = render_page(
+        {
+            "title": title,
+            "category": "query",
+            "tags": [A_INF_TAG],
+            "sources": ["a-inf query"],
+            "created": now.date().isoformat(),
+            "updated": now.date().isoformat(),
+            "question": question,
+        },
+        body,
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(page, encoding="utf-8")
+    return path
+
+
+def resolve_query_output_path(vault: Path, question: str, output: str | None = None) -> Path:
+    root = vault.resolve()
+    if output:
+        path = Path(output).expanduser()
+        candidate = path if path.is_absolute() else root / path
+        if candidate.suffix != ".md":
+            candidate = candidate.with_suffix(".md")
+        try:
+            candidate.resolve().relative_to(root)
+        except ValueError as exc:
+            raise ValueError("output path must stay inside the vault") from exc
+        return unique_path(candidate)
+
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    slug = slugify(question) or "query"
+    return unique_path(root / QUERY_OUTPUT_DIR / f"{stamp}-{slug}.md")
+
+
+def unique_path(path: Path) -> Path:
+    if not path.exists():
+        return path
+    suffix = 2
+    while True:
+        candidate = path.with_name(f"{path.stem}-{suffix}{path.suffix}")
+        if not candidate.exists():
+            return candidate
+        suffix += 1
+
+
+def slugify(value: str) -> str:
+    ascii_value = value.encode("ascii", "ignore").decode("ascii").lower()
+    slug = re.sub(r"[^a-z0-9]+", "-", ascii_value).strip("-")
+    slug = re.sub(r"-{2,}", "-", slug)
+    return slug[:60].strip("-")
 
 
 def build_retrieval_packet(vault: Path, config: dict[str, str], question: str, qmd: QmdInfo) -> dict[str, Any]:

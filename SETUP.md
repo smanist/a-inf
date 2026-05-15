@@ -43,7 +43,7 @@ Initialization creates:
 - `.manifest.json`
 - `index.md`, `log.md`, `hot.md`
 - `_meta/taxonomy.md`
-- `.obsidian/app.json` and `.obsidian/appearance.json`
+- `.obsidian/app.json`, `.obsidian/appearance.json`, and `.obsidian/community-plugins.json`
 - vault folders: `concepts/`, `entities/`, `skills/`, `references/`, `synthesis/`, `journal/`, `projects/`, `_archives/`, `_raw/`
 - `.agents/skills/<skill-name>` symlinks to this checkout's bundled skills
 - an `a-inf` section in `AGENTS.md`, unless `--no-agents` is passed

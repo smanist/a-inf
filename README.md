@@ -32,6 +32,7 @@ a-inf query "what do I know about rate limiting?"
 
 ```bash
 a-inf ingest paper-xx --print-prompt
+a-inf info
 ```
 
 ## What `a-inf init` Creates
@@ -61,7 +62,8 @@ repo/
 ├── synthesis/
 ├── journal/
 ├── ideas/
-└── projects/
+├── projects/
+└── query/                   # saved a-inf query answers tagged #a-inf
 ```
 
 If `AGENTS.md` already exists, `a-inf init` appends a small marked `a-inf` section instead of replacing the file. Pass `--no-agents` to skip that. Pass `--no-gitignore` to leave `.gitignore` untouched.
@@ -74,7 +76,9 @@ If `AGENTS.md` already exists, `a-inf init` appends a small marked `a-inf` secti
 | `a-inf init [path]` | Initialize a repo as a vault |
 | `a-inf ingest <source...>` | Hybrid deterministic document and URL ingest |
 | `a-inf ingest <url>` | Fetch with `defuddle`, then run hybrid ingest |
-| `a-inf query <question>` | Answer from the compiled vault |
+| `a-inf info` | Print effective config, source roots, raw dir, QMD collections, and related settings |
+| `a-inf query <question>` | Answer from the compiled vault and save it as `query/<timestamp>-<question>.md` with the `a-inf` tag |
+| `a-inf query --no-save <question>` | Print the answer without saving a Markdown file |
 | `a-inf status` | Show ingest state and deltas locally |
 | `a-inf insights` | Analyze hubs, bridges, and graph structure |
 | `a-inf update` | Sync current project knowledge into the vault |
@@ -109,7 +113,7 @@ a-inf ingest --mode full
 a-inf ingest --raw
 ```
 
-Use `--sandbox read-only` for dry inspection workflows that still invoke Codex, or `--add-dir <path>` when an ingest source lives outside the vault and Codex needs access to it. `a-inf history` automatically adds `CODEX_HISTORY_PATH` or `~/.codex` when that directory exists.
+Use `a-inf info` to inspect the raw config files and effective settings, `--sandbox read-only` for dry inspection workflows that still invoke Codex, or `--add-dir <path>` when an ingest source lives outside the vault and Codex needs access to it. `a-inf history` automatically adds `CODEX_HISTORY_PATH` or `~/.codex` when that directory exists.
 
 Commands that can be fully deterministic should move into Python over time. `a-inf status` is deterministic local Python, and `a-inf insights` is deterministic graph analysis with optional Codex explanation enrichment. Commands that require synthesis can keep using Codex behind the CLI.
 
@@ -126,6 +130,8 @@ link_format = "wikilink"
 ```
 
 It also writes a minimal `.env` when one does not already exist, because some skills still read legacy env config during the migration. `.a-inf/config.toml` is the CLI-native config. The generated QMD collection values default to the initialized repo name; init runs `qmd collection add <repo> --name <repo-name>`, then `qmd update` and `qmd embed`.
+Config is read in precedence order from `.a-inf/config.toml`, then `~/.obsidian-wiki/config`, then `.env`, with earlier files winning per key.
+Generated `.env` files set both `OBSIDIAN_SOURCES_DIR` and `OBSIDIAN_RAW_DIR` to `_raw`, so plain `a-inf ingest` uses the staging folder in append mode by default.
 
 Optional environment variables from `.env.example` still apply for skill workflows, including:
 

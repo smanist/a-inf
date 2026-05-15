@@ -73,6 +73,7 @@ def test_init_creates_vault_structure_and_local_skill_links(tmp_path: Path, monk
         "journal",
         "projects",
         "ideas",
+        "query",
         "_archives",
         "_raw",
         "_sources",
@@ -88,9 +89,22 @@ def test_init_creates_vault_structure_and_local_skill_links(tmp_path: Path, monk
     env = (vault / ".env").read_text(encoding="utf-8")
     assert f"QMD_WIKI_COLLECTION={vault.name}" in env
     assert f"QMD_PAPERS_COLLECTION={vault.name}" in env
+    assert "OBSIDIAN_SOURCES_DIR=_raw" in env
+    assert "OBSIDIAN_RAW_DIR=_raw" in env
     assert "A_INF_ARCHIVE_SOURCES=true" in env
     assert "A_INF_SOURCE_ARCHIVE_DIR=_sources" in env
     assert "A_INF_QUERY_SOURCE_DETAIL=auto" in env
+    app = json.loads((vault / ".obsidian" / "app.json").read_text(encoding="utf-8"))
+    assert app == {
+        "strictLineBreaks": False,
+        "showFrontmatter": False,
+        "defaultViewMode": "preview",
+        "livePreview": True,
+        "promptDelete": False,
+        "showUnsupportedFiles": True,
+    }
+    community_plugins = json.loads((vault / ".obsidian" / "community-plugins.json").read_text(encoding="utf-8"))
+    assert community_plugins == ["obsidian-git", "lean-terminal"]
     graph = json.loads((vault / ".obsidian" / "graph.json").read_text(encoding="utf-8"))
     assert graph["search"] == "-tag:#a-inf -path:_sources"
     assert graph["collapse-filter"] is True
@@ -115,6 +129,8 @@ def test_init_creates_vault_structure_and_local_skill_links(tmp_path: Path, monk
     assert "_sources/" in gitignore
     assert ".env" in gitignore
     assert ".a-inf/" in gitignore
+    assert ".obsidian/workspace.json" in gitignore
+    assert ".obsidian/plugins" in gitignore
     assert "graph.json.backup-*" in gitignore
 
     manifest = json.loads((vault / ".manifest.json").read_text(encoding="utf-8"))
@@ -239,6 +255,8 @@ def test_init_upgrades_existing_gitignore_section(tmp_path: Path, monkeypatch) -
     assert "_sources/" in gitignore
     assert ".env" in gitignore
     assert ".a-inf/" in gitignore
+    assert ".obsidian/workspace.json" in gitignore
+    assert ".obsidian/plugins" in gitignore
     assert "graph.json.backup-*" in gitignore
 
 

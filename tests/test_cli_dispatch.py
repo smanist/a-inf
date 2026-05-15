@@ -6,6 +6,7 @@ from pathlib import Path
 from a_inf import cli
 from a_inf import colorize
 from a_inf import dashboard
+from a_inf import ingest
 from a_inf import insights
 from a_inf import qmd
 
@@ -22,6 +23,39 @@ class Args:
     codex_bin = "codex"
     sandbox = "workspace-write"
     add_dir: list[str] = []
+
+
+def test_info_command_reports_effective_configuration(tmp_path: Path, monkeypatch, capsys) -> None:
+    vault = tmp_path / "vault"
+    sources = tmp_path / "configured-sources"
+    vault.mkdir()
+    sources.mkdir()
+    (vault / ".manifest.json").write_text('{"version": 1}\n', encoding="utf-8")
+    (vault / ".a-inf").mkdir()
+    (vault / ".a-inf" / "config.toml").write_text(
+        f'vault_path = "{vault}"\nskills_source = "{tmp_path / "skills"}"\nlink_format = "markdown"\n',
+        encoding="utf-8",
+    )
+    (vault / ".env").write_text(
+        f"OBSIDIAN_SOURCES_DIR={sources}\n"
+        "OBSIDIAN_RAW_DIR=staging\n"
+        "QMD_WIKI_COLLECTION=vault\n"
+        "A_INF_SOURCE_ARCHIVE_DIR=archives\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(vault)
+    monkeypatch.setattr(ingest.Path, "home", classmethod(lambda cls: tmp_path / "home"))
+
+    assert cli.main(["info"]) == 0
+    packet = cli.json.loads(capsys.readouterr().out)
+    assert packet["config_precedence"] == [".a-inf/config.toml", "~/.obsidian-wiki/config", ".env"]
+    assert packet["config_files"][".a-inf/config.toml"]["values"]["link_format"] == "markdown"
+    assert packet["effective_config"]["OBSIDIAN_SOURCES_DIR"] == str(sources)
+    assert packet["effective_settings"]["link_format"] == "markdown"
+    assert packet["effective_settings"]["ingest"]["source_roots"] == [str(sources)]
+    assert packet["effective_settings"]["ingest"]["raw_dir"] == str(vault / "staging")
+    assert packet["effective_settings"]["archive"]["source_archive_dir"] == str(vault / "archives")
 
 
 def test_dispatch_invokes_codex_with_workspace_write_and_cd(

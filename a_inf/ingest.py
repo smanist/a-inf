@@ -268,6 +268,91 @@ def load_wiki_config(vault: Path) -> dict[str, str]:
     return config
 
 
+def print_info(vault: Path, config: dict[str, str]) -> None:
+    report = {
+        "vault": str(vault),
+        "config_precedence": [".a-inf/config.toml", "~/.obsidian-wiki/config", ".env"],
+        "config_files": {
+            ".a-inf/config.toml": config_file_report(vault / ".a-inf" / "config.toml", "toml"),
+            "~/.obsidian-wiki/config": config_file_report(Path.home() / ".obsidian-wiki" / "config", "env"),
+            ".env": config_file_report(vault / ".env", "env"),
+        },
+        "effective_config": dict(sorted(config.items())),
+        "effective_settings": {
+            "vault_path": config.get("OBSIDIAN_VAULT_PATH") or config.get("vault_path") or str(vault),
+            "link_format": config.get("OBSIDIAN_LINK_FORMAT", "wikilink"),
+            "ingest": {
+                "sources_dir": config.get("OBSIDIAN_SOURCES_DIR") or "",
+                "source_roots": [str(path) for path in split_config_paths(config.get("OBSIDIAN_SOURCES_DIR"))],
+                "source_roots_resolved": [
+                    str(path if path.is_absolute() else vault / path)
+                    for path in split_config_paths(config.get("OBSIDIAN_SOURCES_DIR"))
+                ],
+                "raw_dir": str(raw_dir(vault, config)),
+            },
+            "archive": {
+                "archive_sources": config_value(config, "A_INF_ARCHIVE_SOURCES", "true"),
+                "source_archive_dir": str(archive_root(vault, config)),
+            },
+            "pdf": {
+                "extractor": config_value(config, "A_INF_PDF_EXTRACTOR", "auto"),
+                "mineru_bin": config_value(config, "A_INF_MINERU_BIN", "mineru"),
+                "mineru_method": config_value(config, "A_INF_MINERU_METHOD", "auto"),
+                "mineru_backend": config_value(config, "A_INF_MINERU_BACKEND", "pipeline"),
+                "mineru_lang": config_value(config, "A_INF_MINERU_LANG", "en"),
+            },
+            "qmd": {
+                "wiki_collection": config.get("QMD_WIKI_COLLECTION") or "",
+                "papers_collection": config.get("QMD_PAPERS_COLLECTION") or "",
+            },
+            "query": {
+                "source_detail": config_value(config, "A_INF_QUERY_SOURCE_DETAIL", "auto"),
+            },
+        },
+        "process_environment": process_environment_config(),
+    }
+    print(json.dumps(report, indent=2, sort_keys=True))
+
+
+def config_file_report(path: Path, file_format: str) -> dict[str, Any]:
+    report: dict[str, Any] = {"path": str(path), "exists": path.exists(), "values": {}}
+    if not path.exists():
+        return report
+    if file_format == "toml":
+        try:
+            data = tomllib.loads(path.read_text(encoding="utf-8"))
+        except tomllib.TOMLDecodeError as exc:
+            report["error"] = str(exc)
+            return report
+        report["values"] = data
+        return report
+    report["values"] = read_env_file(path)
+    return report
+
+
+def process_environment_config() -> dict[str, str]:
+    keys = [
+        "OBSIDIAN_VAULT_PATH",
+        "OBSIDIAN_SOURCES_DIR",
+        "OBSIDIAN_RAW_DIR",
+        "OBSIDIAN_LINK_FORMAT",
+        "CODEX_HISTORY_PATH",
+        "QMD_WIKI_COLLECTION",
+        "QMD_PAPERS_COLLECTION",
+        "A_INF_ARCHIVE_SOURCES",
+        "A_INF_SOURCE_ARCHIVE_DIR",
+        "A_INF_QUERY_SOURCE_DETAIL",
+        "A_INF_PDF_EXTRACTOR",
+        "A_INF_MINERU_BIN",
+        "A_INF_MINERU_METHOD",
+        "A_INF_MINERU_BACKEND",
+        "A_INF_MINERU_LANG",
+        "A_INF_MINERU_FORMULA",
+        "A_INF_MINERU_TABLE",
+    ]
+    return {key: os.environ[key] for key in keys if key in os.environ}
+
+
 def read_env_file(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
     for line in path.read_text(encoding="utf-8").splitlines():
