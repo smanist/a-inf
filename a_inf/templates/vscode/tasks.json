@@ -2,6 +2,36 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "Ingest raw (a-inf)",
+      "type": "shell",
+      "command": "a-inf ingest",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true,
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Ingest URL (a-inf)",
+      "type": "shell",
+      "command": "a-inf ingest ${input:aInfURL}",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true,
+      },
+      "problemMatcher": []
+    },
+    {
       "label": "Insights (a-inf)",
       "type": "shell",
       "command": "a-inf insights --vscode",
@@ -81,6 +111,11 @@
     }
   ],
   "inputs": [
+    {
+      "id": "aInfURL",
+      "type": "promptString",
+      "description": "URL to ingest"
+    },
     {
       "id": "aInfMode",
       "type": "pickString",
