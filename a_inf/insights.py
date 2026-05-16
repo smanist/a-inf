@@ -27,6 +27,7 @@ class Run:
     run_dir: Path
     packet_path: Path
     explanations_path: Path
+    output_path: Path
     report_path: Path
 
 
@@ -55,7 +56,7 @@ def run_insights(args: Any, vault: Path, config: dict[str, str] | None = None) -
     warnings.extend(str(item) for item in explanation_result.get("warnings", []) if str(item))
 
     output_text = render_insights_markdown(packet, explanation_result)
-    (vault / "_insights.md").write_text(output_text, encoding="utf-8")
+    run.output_path.write_text(output_text, encoding="utf-8")
     if not getattr(args, "no_log", False):
         append_log(vault, packet)
 
@@ -72,7 +73,7 @@ def run_insights(args: Any, vault: Path, config: dict[str, str] | None = None) -
         status="completed",
         explanation_status=str(explanation_result.get("status") or "unknown"),
         warnings=[*warnings, *qmd_warning],
-        output_path="_insights.md",
+        output_path=run.output_path.relative_to(vault).as_posix(),
     )
     write_json(run.report_path, report)
     print_report(report, json_output=getattr(args, "json", False))
@@ -83,7 +84,7 @@ def build_insights_packet(vault: Path, config: dict[str, str], explanations_path
     pages = lint.build_page_registry(vault)
     links = lint.build_link_graph(vault, pages)
     snapshot = build_snapshot(pages, links)
-    previous_snapshot = read_previous_snapshot(vault / "_insights.md")
+    previous_snapshot = read_previous_snapshot(previous_insights_output(vault))
     anchors = anchor_pages(pages, links)
     cohesion = tag_cohesion(pages, links)
     bridges = bridge_pages(pages, links)
@@ -332,6 +333,13 @@ def suggested_questions(
 def build_snapshot(pages: dict[str, lint.Page], links: dict[str, Any]) -> dict[str, Any]:
     edges = sorted({(edge["source"], edge["resolved"]) for edge in links["resolved_edges"] if edge["source"] != edge["resolved"]})
     return {"nodes": sorted(pages), "edges": [[source, target] for source, target in edges]}
+
+
+def previous_insights_output(vault: Path) -> Path:
+    candidates = [path for path in (vault / "_runs").glob("insights-*/_insights.md") if path.is_file()]
+    if candidates:
+        return max(candidates, key=lambda path: (path.stat().st_mtime_ns, path.as_posix()))
+    return vault / "_insights.md"
 
 
 def read_previous_snapshot(path: Path) -> dict[str, Any] | None:
@@ -634,6 +642,7 @@ def create_run(vault: Path) -> Run:
         run_dir=candidate,
         packet_path=candidate / "packet.json",
         explanations_path=candidate / "explanations.json",
+        output_path=candidate / "_insights.md",
         report_path=candidate / "report.json",
     )
 

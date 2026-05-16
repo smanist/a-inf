@@ -139,7 +139,7 @@ Route extracted knowledge using existing wiki conventions:
 
 - Project-specific architecture/process -> `projects/<name>/...`
 - General concepts -> `concepts/`
-- Recurring techniques/debug playbooks -> `skills/`
+- Recurring techniques/debug playbooks -> `concepts/`
 - Tools/services -> `entities/`
 - Cross-session patterns -> `synthesis/`
 

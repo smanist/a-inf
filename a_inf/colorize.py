@@ -32,11 +32,9 @@ VALID_MODES = {"by-tag", "by-category", "by-visibility", "combined", "custom", "
 CATEGORY_COLORS = {
     "concepts": "blue",
     "entities": "orange",
-    "skills": "red",
     "references": "teal",
     "synthesis": "green",
     "projects": "yellow",
-    "journal": "purple",
 }
 VISIBILITY_COLORS = [
     ("visibility/pii", "red"),

@@ -77,7 +77,6 @@ Goes under `$VAULT/projects/<project-name>/`:
 projects/<project-name>/
 ├── <project-name>.md          ← project overview (named after the project, NOT _project.md)
 ├── concepts/                  ← project-specific ideas, architectures
-├── skills/                    ← project-specific how-tos, patterns
 └── references/                ← project-specific source summaries
 ```
 
@@ -93,7 +92,7 @@ Things that aren't project-specific go in the global categories:
 | What you found | Where it goes |
 |---|---|
 | A general concept learned | `concepts/` |
-| A reusable pattern or technique | `skills/` |
+| A reusable pattern or technique | `concepts/` |
 | A tool/service/person | `entities/` |
 | Cross-project analysis | `synthesis/` |
 

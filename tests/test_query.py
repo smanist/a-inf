@@ -226,6 +226,27 @@ def test_cli_query_saves_by_default_and_accepts_output() -> None:
     assert args.args == ["rate", "limits"]
 
 
+def test_cli_query_accepts_vscode_mode() -> None:
+    parser = cli.build_parser()
+
+    args = parser.parse_args(["query", "--mode", "vscode", "rate", "limits"])
+
+    assert args.alias == "query"
+    assert args.mode == "vscode"
+    assert args.vscode_bin == "code"
+    assert args.args == ["rate", "limits"]
+
+
+def test_cli_query_accepts_vscode_shortcut() -> None:
+    parser = cli.build_parser()
+
+    args = parser.parse_args(["query", "--vscode", "--vscode-bin", "code-insiders"])
+
+    assert args.mode == "vscode"
+    assert args.vscode_bin == "code-insiders"
+    assert args.args == []
+
+
 def test_cli_query_accepts_no_save() -> None:
     parser = cli.build_parser()
 
@@ -263,6 +284,103 @@ def test_write_query_output_rejects_paths_outside_vault(tmp_path: Path) -> None:
         assert "inside the vault" in str(exc)
     else:
         raise AssertionError("expected ValueError")
+
+
+def test_run_query_vscode_mode_reads_temp_markdown(tmp_path: Path, monkeypatch, capsys) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    opened_paths: list[Path] = []
+    seen_questions: list[str] = []
+
+    monkeypatch.setattr(query.shutil, "which", lambda _name: "/usr/local/bin/code")
+    monkeypatch.setattr(query, "ensure_qmd_collection", lambda _vault, _config: True)
+    monkeypatch.setattr(query, "resolve_qmd", lambda _config, query_vault: fake_qmd(query_vault))
+
+    def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        path = Path(command[-1])
+        opened_paths.append(path)
+        assert path.suffix == ".md"
+        assert "rate limits" in path.read_text(encoding="utf-8")
+        path.write_text("How do [[Rate Limits]] work?\n", encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0)
+
+    def fake_packet(_vault: Path, _config: dict[str, str], question: str, _qmd: QmdInfo) -> dict[str, object]:
+        seen_questions.append(question)
+        return {"question": question, "candidates": []}
+
+    monkeypatch.setattr(query.subprocess, "run", fake_run)
+    monkeypatch.setattr(query, "build_retrieval_packet", fake_packet)
+    monkeypatch.setattr(query, "build_query_prompt", lambda _vault, question, _packet: f"QUESTION:{question}")
+
+    result = query.run_query(
+        SimpleNamespace(
+            args=["rate", "limits"],
+            mode="vscode",
+            vscode_bin="code",
+            print_prompt=True,
+            no_codex=False,
+            codex_bin="codex",
+            sandbox="workspace-write",
+            add_dir=[],
+            save=True,
+            output=None,
+        ),
+        vault,
+        {},
+    )
+
+    assert result == 0
+    assert seen_questions == ["How do [[Rate Limits]] work?"]
+    assert "QUESTION:How do [[Rate Limits]] work?" in capsys.readouterr().out
+    assert opened_paths and not opened_paths[0].exists()
+
+
+def test_run_query_vscode_mode_opens_saved_answer(tmp_path: Path, monkeypatch, capsys) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    code_calls: list[list[str]] = []
+
+    monkeypatch.setattr(query.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(query, "ensure_qmd_collection", lambda _vault, _config: True)
+    monkeypatch.setattr(query, "resolve_qmd", lambda _config, query_vault: fake_qmd(query_vault))
+    monkeypatch.setattr(query, "build_retrieval_packet", lambda *_args, **_kwargs: {"candidates": []})
+    monkeypatch.setattr(query, "build_query_prompt", lambda _vault, question, _packet: f"QUESTION:{question}")
+
+    def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        if command[0] == "/usr/local/bin/code":
+            code_calls.append(command)
+            if "--wait" in command:
+                Path(command[-1]).write_text("What is saved?\n", encoding="utf-8")
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        return subprocess.CompletedProcess(command, 0, stdout="Saved answer body.\n", stderr="")
+
+    monkeypatch.setattr(query.subprocess, "run", fake_run)
+
+    result = query.run_query(
+        SimpleNamespace(
+            args=[],
+            mode="vscode",
+            vscode_bin="code",
+            print_prompt=False,
+            no_codex=False,
+            codex_bin="codex",
+            sandbox="workspace-write",
+            add_dir=[],
+            save=True,
+            output=None,
+        ),
+        vault,
+        {},
+    )
+
+    saved = list((vault / "_runs").glob("query-*/answer.md"))
+    assert result == 0
+    assert len(saved) == 1
+    assert "Saved answer body." in saved[0].read_text(encoding="utf-8")
+    assert len(code_calls) == 2
+    assert code_calls[0][1] == "--wait"
+    assert code_calls[1] == ["/usr/local/bin/code", str(saved[0])]
+    assert "Saved query output to _runs/query-" in capsys.readouterr().out
 
 
 def test_run_query_default_save_captures_codex_output(tmp_path: Path, monkeypatch, capsys) -> None:

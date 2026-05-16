@@ -27,14 +27,11 @@ $OBSIDIAN_VAULT_PATH/
 ├── _meta/
 │   ├── taxonomy.md         # Controlled tag vocabulary
 │   └── *.base              # Obsidian Bases dashboard definitions (wiki-dashboard skill)
-├── _insights.md            # Graph analysis output (hubs, bridges, dead ends)
 ├── _raw/                   # Staging area — drop rough notes here, next ingest promotes them
 ├── concepts/               # Abstract ideas, patterns, mental models
 ├── entities/               # Concrete things — people, tools, libraries, companies
-├── skills/                 # How-to knowledge, techniques, procedures
 ├── references/             # Source cards and summaries — not full copies of original material
 ├── synthesis/              # Cross-cutting analysis connecting multiple concepts
-├── journal/                # Time-bound entries — daily logs, session notes
 ├── ideas/                  # Agent handoff idea packets tagged a-inf, ignored by the graph
 └── projects/
     └── <project-name>.md   # One page per project synced via wiki-update

@@ -89,7 +89,7 @@ def test_build_lint_packet_reports_hard_findings_and_candidates(tmp_path: Path) 
     for idx in range(3):
         write_page(vault, f"references/co-{idx}.md", body="Uses [[concepts/a]] and [[concepts/b]].")
     for idx in range(4):
-        write_page(vault, f"skills/cluster-{idx}.md", tags=["systems"], body="")
+        write_page(vault, f"references/cluster-{idx}.md", tags=["systems"], body="")
 
     packet = lint.build_lint_packet(vault, {})
 

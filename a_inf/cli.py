@@ -8,6 +8,7 @@ import os
 import shutil
 import subprocess
 import sys
+import textwrap
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,10 +24,8 @@ LOCAL_SKILLS_DIR = Path(".agents") / "skills"
 VAULT_DIRS = [
     "concepts",
     "entities",
-    "skills",
     "references",
     "synthesis",
-    "journal",
     "projects",
     "ideas",
     "_archives",
@@ -41,10 +40,8 @@ VAULT_DIRS = [
 TRACKED_SCAFFOLD_DIRS = [
     "concepts",
     "entities",
-    "skills",
     "references",
     "synthesis",
-    "journal",
     "projects",
     "ideas",
     "_archives",
@@ -68,6 +65,49 @@ SKILL_ALIASES = {
     "tags": "wiki-tags",
     "ideate": "wiki-ideate",
 }
+
+COMMAND_HELP = {
+    "init": "Initialize a vault; writes scaffold files, config, Obsidian settings, skill links, and an initial commit.",
+    "info": "Show configuration; prints vault paths, source roots, skill roots, and QMD settings.",
+    "status": "Show ingest state; prints page counts, source deltas, manifest state, and next-action guidance.",
+    "ingest": "Import sources; writes wiki pages, source archives, manifest/index/log/hot updates, and QMD state.",
+    "query": "Answer from the compiled wiki; prints a cited answer and saves it under _runs/query-* by default.",
+    "insights": "Analyze wiki graph structure; writes _runs/insights-* output and prints hubs, bridges, and orphans.",
+    "lint": "Audit wiki health; prints or saves link, metadata, stale-page, orphan, and semantic findings.",
+    "fixlink": "Add or remove wikilinks; edits pages when changes apply and prints a validation report.",
+    "synthesize": "Find synthesis gaps; writes run packets/reports and any accepted synthesis pages.",
+    "dashboard": "Create Obsidian Bases dashboards; writes _meta/*.base and prints the dashboard report.",
+    "colorize": "Configure graph colors; edits .obsidian/graph.json, writes a backup, and prints color groups.",
+    "tags": "Audit or normalize tags; writes a tag plan or applies one with --fix, then prints a tag report.",
+    "ideate": "Create an agent handoff idea packet; writes one Markdown file under ideas/ and prints its path.",
+    "update": "Sync project knowledge into the wiki; Codex updates project pages and tracking files.",
+    "history": "Ingest Codex history; Codex mines local conversations and writes durable wiki knowledge.",
+    "rebuild": "Archive, rebuild, or restore wiki state; Codex performs the selected workflow after confirmation.",
+    "export": "Export the wiki graph; Codex writes JSON, GraphML, Cypher, and HTML export files.",
+    "research": "Research a topic; Codex writes source, concept, entity, and synthesis pages plus tracking updates.",
+    "capture": "Capture the current discussion; Codex writes a structured note and updates wiki tracking files.",
+    "skill": "Dispatch any bundled skill by name; output depends on the selected skill.",
+}
+
+COMMAND_GROUPS = [
+    ("CLI-native commands", ["init", "info", "status"]),
+    (
+        "Python-owned workflows",
+        [
+            "ingest",
+            "query",
+            "insights",
+            "lint",
+            "fixlink",
+            "synthesize",
+            "dashboard",
+            "colorize",
+            "tags",
+            "ideate",
+        ],
+    ),
+    ("Thin Codex skill dispatchers", ["update", "history", "rebuild", "export", "research", "capture", "skill"]),
+]
 
 QMD_SYNC_SKILLS = {
     "wiki-ingest",
@@ -108,6 +148,57 @@ class Dispatch:
     prompt: str
 
 
+class AInfArgumentParser(argparse.ArgumentParser):
+    def __init__(
+        self,
+        *args: object,
+        command_groups: list[tuple[str, list[str]]] | None = None,
+        command_help: dict[str, str] | None = None,
+        **kwargs: object,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self.command_groups = command_groups or []
+        self.command_help = command_help or {}
+
+    def format_help(self) -> str:
+        if not self.command_groups:
+            return super().format_help()
+
+        usage_formatter = self._get_formatter()
+        usage_formatter.add_usage(self.usage, self._actions, self._mutually_exclusive_groups)
+
+        option_formatter = self._get_formatter()
+        option_formatter.start_section("options")
+        option_formatter.add_arguments(self._optionals._group_actions)
+        option_formatter.end_section()
+
+        return (
+            usage_formatter.format_help().rstrip()
+            + "\n\n"
+            + option_formatter.format_help().rstrip()
+            + "\n\n"
+            + self._format_command_groups()
+        )
+
+    def _format_command_groups(self) -> str:
+        command_width = max(len(command) for _, commands in self.command_groups for command in commands)
+        width = max(60, shutil.get_terminal_size(fallback=(100, 24)).columns)
+        hanging_indent = " " * (4 + command_width + 2)
+        lines = ["commands:"]
+        for title, commands in self.command_groups:
+            lines.append(f"  {title}:")
+            for command in commands:
+                prefix = f"    {command:<{command_width}}  "
+                wrapped = textwrap.wrap(
+                    self.command_help.get(command, ""),
+                    width=max(30, width - len(prefix)),
+                    initial_indent=prefix,
+                    subsequent_indent=hanging_indent,
+                )
+                lines.extend(wrapped or [prefix.rstrip()])
+        return "\n".join(lines) + "\n"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -115,12 +206,12 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="a-inf")
+    parser = AInfArgumentParser(prog="a-inf", command_groups=COMMAND_GROUPS, command_help=COMMAND_HELP)
     parser.add_argument("--version", action="version", version="a-inf 0.1.0")
 
     sub = parser.add_subparsers(dest="command", required=True)
 
-    init_parser = sub.add_parser("init", help="Initialize the current repo as an a-inf vault.")
+    init_parser = sub.add_parser("init", help=COMMAND_HELP["init"])
     init_parser.add_argument("path", nargs="?", default=".", help="Vault/repo path to initialize.")
     init_parser.add_argument(
         "--skills-source",
@@ -150,11 +241,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     init_parser.set_defaults(func=cmd_init)
 
-    status_parser = sub.add_parser("status", help="Show ingest state and deltas.")
+    status_parser = sub.add_parser("status", help=COMMAND_HELP["status"])
     status_parser.add_argument(
         "--insights",
         action="store_true",
-        help="Run the wiki-insights workflow instead of the deterministic status report.",
+        help="Run graph insights instead of the deterministic status report.",
     )
     status_parser.add_argument(
         "args",
@@ -164,7 +255,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_dispatch_options(status_parser)
     status_parser.set_defaults(func=cmd_status)
 
-    info_parser = sub.add_parser("info", help="Print effective a-inf configuration.")
+    info_parser = sub.add_parser("info", help=COMMAND_HELP["info"])
     info_parser.set_defaults(func=cmd_info)
 
     for name in [
@@ -185,7 +276,7 @@ def build_parser() -> argparse.ArgumentParser:
         "tags",
         "ideate",
     ]:
-        cmd = sub.add_parser(name, help=f"Run the {SKILL_ALIASES[name]} workflow.")
+        cmd = sub.add_parser(name, help=COMMAND_HELP[name])
         if name == "ingest":
             cmd.add_argument(
                 "--data",
@@ -251,7 +342,12 @@ def build_parser() -> argparse.ArgumentParser:
             cmd.add_argument(
                 "--dry-run",
                 action="store_true",
-                help="Run Codex and validate the repair plan without applying edits.",
+                help="Validate the planned fixlink changes without applying edits.",
+            )
+            cmd.add_argument(
+                "--remove-broken",
+                action="store_true",
+                help="Deterministically remove wikilinks whose targets do not resolve to existing pages.",
             )
             cmd.add_argument(
                 "--no-log",
@@ -372,6 +468,24 @@ def build_parser() -> argparse.ArgumentParser:
             )
         if name == "ideate":
             cmd.add_argument(
+                "--mode",
+                choices=["inline", "vscode"],
+                default="inline",
+                help="How to provide the idea. Default: inline.",
+            )
+            cmd.add_argument(
+                "--vscode",
+                dest="mode",
+                action="store_const",
+                const="vscode",
+                help="Open a temporary Markdown idea draft in VS Code, then run it after the file is closed.",
+            )
+            cmd.add_argument(
+                "--vscode-bin",
+                default="code",
+                help="VS Code executable to use for --mode vscode. Default: code.",
+            )
+            cmd.add_argument(
                 "--entry",
                 action="append",
                 default=[],
@@ -383,6 +497,24 @@ def build_parser() -> argparse.ArgumentParser:
                 help="Print the final ideation report as JSON instead of Markdown.",
             )
         if name == "query":
+            cmd.add_argument(
+                "--mode",
+                choices=["inline", "vscode"],
+                default="inline",
+                help="How to provide the query. Default: inline.",
+            )
+            cmd.add_argument(
+                "--vscode",
+                dest="mode",
+                action="store_const",
+                const="vscode",
+                help="Open a temporary Markdown query draft in VS Code, then run it after the file is closed.",
+            )
+            cmd.add_argument(
+                "--vscode-bin",
+                default="code",
+                help="VS Code executable to use for --mode vscode. Default: code.",
+            )
             cmd.add_argument(
                 "--save",
                 action="store_true",
@@ -404,7 +536,7 @@ def build_parser() -> argparse.ArgumentParser:
         add_dispatch_options(cmd)
         cmd.set_defaults(func=cmd_dispatch, alias=name)
 
-    skill_parser = sub.add_parser("skill", help="Run an arbitrary bundled skill by name.")
+    skill_parser = sub.add_parser("skill", help=COMMAND_HELP["skill"])
     skill_parser.add_argument("skill", help="Skill name, e.g. wiki-ingest.")
     skill_parser.add_argument("args", nargs="*", help="Arguments passed to the skill.")
     add_dispatch_options(skill_parser)
@@ -817,7 +949,7 @@ class SourceDelta:
     entry: dict[str, object]
 
 
-WIKI_PAGE_DIRS = ["concepts", "entities", "skills", "references", "synthesis", "journal", "projects"]
+WIKI_PAGE_DIRS = ["concepts", "entities", "references", "synthesis", "projects"]
 TEXT_SUFFIXES = {
     ".bash",
     ".c",
@@ -1446,13 +1578,9 @@ tags: {managed_tags()}
 
 ## Entities
 
-## Skills
-
 ## References
 
 ## Synthesis
-
-## Journal
 """
 
 
@@ -1464,7 +1592,7 @@ tags: {managed_tags()}
 
 # Wiki Log
 
-- [{now_iso()}] INIT vault_path="{vault}" categories=concepts,entities,skills,references,synthesis,journal
+- [{now_iso()}] INIT vault_path="{vault}" categories=concepts,entities,references,synthesis,projects
 """
 
 
@@ -1544,7 +1672,7 @@ def graph_template() -> dict[str, object]:
 def env_template(vault: Path) -> str:
     return f"""OBSIDIAN_VAULT_PATH={vault}
 OBSIDIAN_SOURCES_DIR=_raw
-OBSIDIAN_CATEGORIES=concepts,entities,skills,references,synthesis,journal
+OBSIDIAN_CATEGORIES=concepts,entities,references,synthesis,projects
 OBSIDIAN_MAX_PAGES_PER_INGEST=15
 CODEX_HISTORY_PATH=
 LINT_SCHEDULE=weekly

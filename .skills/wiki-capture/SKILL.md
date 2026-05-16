@@ -49,7 +49,7 @@ Assign one of five types — this determines the target folder and tone:
 | `concept` | A definition, framework, or mental model (what a thing *is*) | `concepts/` |
 | `source` | Summary of an external document, article, or resource discussed | `references/` |
 | `decision` | A strategic, architectural, or design choice and its rationale | `synthesis/` |
-| `session` | A complete discussion summary when the conversation spans multiple topics | `journal/` |
+| `session` | A complete discussion summary when the conversation spans multiple topics | `references/` |
 
 If the content clearly belongs to a specific project (detected from context or user mention), place it under `projects/<project-name>/<category>/` instead.
 
@@ -82,7 +82,7 @@ Create the file at the target path with required frontmatter:
 ---
 title: >-
   <Title>
-category: <synthesis|concepts|references|journal|skills>
+category: <synthesis|concepts|references>
 tags: [<2-5 domain tags from taxonomy>]
 sources:
   - conversation:<ISO-date>

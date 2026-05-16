@@ -46,7 +46,7 @@ def add_insight_graph(vault: Path) -> None:
         vault,
         "concepts/hub.md",
         tags=["ml", "systems"],
-        body="Connects [[entities/sink]], [[concepts/peer]], [[references/ref-0]], and [[skills/tool-0]].",
+        body="Connects [[entities/sink]], [[concepts/peer]], [[references/ref-0]], and [[entities/tool-0]].",
     )
     write_page(vault, "concepts/peer.md", tags=["ml"], body="Returns to [[concepts/hub]].")
     write_page(
@@ -65,7 +65,7 @@ def add_insight_graph(vault: Path) -> None:
             body="Mentions [[concepts/hub]] and [[entities/sink]].",
         )
     for index in range(6):
-        write_page(vault, f"skills/tool-{index}.md", tags=["systems"], body="")
+        write_page(vault, f"entities/tool-{index}.md", tags=["systems"], body="")
 
 
 def insight_args(**overrides: object) -> SimpleNamespace:
@@ -82,6 +82,12 @@ def insight_args(**overrides: object) -> SimpleNamespace:
     }
     values.update(overrides)
     return SimpleNamespace(**values)
+
+
+def only_insights_output(vault: Path) -> Path:
+    outputs = sorted((vault / "_runs").glob("insights-*/_insights.md"))
+    assert len(outputs) == 1
+    return outputs[0]
 
 
 def test_build_insights_packet_computes_deterministic_graph_sections(tmp_path: Path) -> None:
@@ -106,6 +112,26 @@ def test_build_insights_packet_computes_deterministic_graph_sections(tmp_path: P
     assert packet["questions"]
 
 
+def test_build_insights_packet_prefers_previous_run_snapshot(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    add_insight_graph(vault)
+    (vault / "_insights.md").write_text(
+        '<!-- GRAPH_SNAPSHOT: {"nodes":["concepts/root-only.md"],"edges":[]} -->\n',
+        encoding="utf-8",
+    )
+    previous_output = vault / "_runs" / "insights-20260515T000000Z" / "_insights.md"
+    previous_output.parent.mkdir(parents=True)
+    previous_output.write_text(
+        '<!-- GRAPH_SNAPSHOT: {"nodes":["concepts/previous-run.md"],"edges":[]} -->\n',
+        encoding="utf-8",
+    )
+
+    packet = insights.build_insights_packet(vault, {}, vault / "_runs/insights/explanations.json")
+
+    assert packet["delta"]["removed_pages"] == ["concepts/previous-run.md"]
+    assert "concepts/root-only.md" not in packet["delta"]["removed_pages"]
+
+
 def test_run_insights_no_codex_writes_markdown_log_and_syncs_qmd(tmp_path: Path, monkeypatch, capsys) -> None:
     vault = make_vault(tmp_path)
     add_insight_graph(vault)
@@ -117,14 +143,18 @@ def test_run_insights_no_codex_writes_markdown_log_and_syncs_qmd(tmp_path: Path,
     result = insights.run_insights(insight_args(no_codex=True), vault, {})
 
     assert result == 0
-    output = (vault / "_insights.md").read_text(encoding="utf-8")
+    output_path = only_insights_output(vault)
+    output = output_path.read_text(encoding="utf-8")
     assert "Wiki Insights" in output
     assert "tags: [a-inf]" in output
     assert "GRAPH_SNAPSHOT" in output
+    assert not (vault / "_insights.md").exists()
     assert "WIKI_INSIGHTS" in (vault / "log.md").read_text(encoding="utf-8")
     assert ensure_calls == [vault]
     assert sync_calls == [vault]
-    assert "**Status:** completed" in capsys.readouterr().out
+    report = capsys.readouterr().out
+    assert "**Status:** completed" in report
+    assert f"**Output:** {output_path.relative_to(vault).as_posix()}" in report
 
 
 def test_default_insights_invokes_codex_and_merges_valid_explanations(tmp_path: Path, monkeypatch) -> None:
@@ -160,7 +190,7 @@ def test_default_insights_invokes_codex_and_merges_valid_explanations(tmp_path: 
     result = insights.run_insights(insight_args(no_codex=False, sandbox="read-only", no_log=True), vault, {})
 
     assert result == 0
-    assert "many paths arrive here" in (vault / "_insights.md").read_text(encoding="utf-8")
+    assert "many paths arrive here" in only_insights_output(vault).read_text(encoding="utf-8")
     assert "WIKI_INSIGHTS" not in (vault / "log.md").read_text(encoding="utf-8")
 
 
@@ -173,7 +203,7 @@ def test_invalid_explanation_json_keeps_deterministic_report(tmp_path: Path, mon
     result = insights.run_insights(insight_args(no_codex=False, sandbox="read-only", no_log=True), vault, {})
 
     assert result == 0
-    output = (vault / "_insights.md").read_text(encoding="utf-8")
+    output = only_insights_output(vault).read_text(encoding="utf-8")
     assert "sink hub - wiki-fixlink candidate" in output
     assert "could not read explanation JSON" in capsys.readouterr().out
 
@@ -187,6 +217,7 @@ def test_skip_small_vault_does_not_write_or_log(tmp_path: Path, capsys) -> None:
 
     assert result == 0
     assert not (vault / "_insights.md").exists()
+    assert not list((vault / "_runs").glob("insights-*/_insights.md"))
     assert (vault / "log.md").read_text(encoding="utf-8") == original_log
     assert "**Status:** skipped" in capsys.readouterr().out
 
@@ -200,4 +231,4 @@ def test_read_only_insights_does_not_sync_qmd(tmp_path: Path, monkeypatch) -> No
     result = insights.run_insights(insight_args(no_codex=True, sandbox="read-only"), vault, {})
 
     assert result == 0
-    assert (vault / "_insights.md").exists()
+    assert only_insights_output(vault).exists()

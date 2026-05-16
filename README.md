@@ -58,10 +58,8 @@ repo/
 │   └── skills/              # symlinks to bundled workflow skills
 ├── concepts/
 ├── entities/
-├── skills/
 ├── references/
 ├── synthesis/
-├── journal/
 ├── ideas/
 ├── projects/
 ```
@@ -78,6 +76,7 @@ If `AGENTS.md` already exists, `a-inf init` appends a small marked `a-inf` secti
 | `a-inf ingest <url>` | Fetch with `defuddle`, then run hybrid ingest |
 | `a-inf info` | Print effective config, source roots, raw dir, QMD collections, and related settings |
 | `a-inf query <question>` | Answer from the compiled vault and save it as `_runs/query-<timestamp>-<question>/answer.md` with the `a-inf` tag |
+| `a-inf query --mode vscode [draft]` | Open a temporary Markdown query draft in VS Code, then answer it after the file is saved and closed |
 | `a-inf query --no-save <question>` | Print the answer without saving a Markdown file |
 | `a-inf status` | Show ingest state and deltas locally |
 | `a-inf insights` | Analyze hubs, bridges, and graph structure |
@@ -92,8 +91,10 @@ If `AGENTS.md` already exists, `a-inf init` appends a small marked `a-inf` secti
 | `a-inf dashboard` | Create Obsidian Bases dashboards |
 | `a-inf colorize` | Configure graph colors |
 | `a-inf fixlink` | Add missing wikilinks |
+| `a-inf fixlink --remove-broken` | Deterministically remove wikilinks whose targets do not resolve |
 | `a-inf tags` | Audit and normalize wiki tags |
 | `a-inf ideate "<idea>"` | Create an agent handoff idea packet |
+| `a-inf ideate --mode vscode` | Open a temporary Markdown idea draft with `entry:` lines, then open the generated idea packet in VS Code |
 | `a-inf skill <name> ...` | Dispatch any bundled skill by name |
 
 ## Codex Dispatch
@@ -118,6 +119,8 @@ Use `a-inf info` to inspect the raw config files and effective settings, `--sand
 Commands that can be fully deterministic should move into Python over time. `a-inf status` is deterministic local Python, and `a-inf insights` is deterministic graph analysis with optional Codex explanation enrichment. Commands that require synthesis can keep using Codex behind the CLI.
 
 `a-inf lint --json` prints the full health packet, including deterministic findings and semantic candidates. Plain `a-inf lint` renders human Markdown, saves the report to `_runs/lint-<timestamp>/lint-findings.md` with the `a-inf` tag, and hides raw semantic candidates unless Codex promotes them. Use `a-inf lint --no-save` to skip the saved report, `--output _runs/custom-lint.md` to choose the saved path, `--no-codex` for deterministic-only output, `--semantic-scope broad` to allow wider semantic review, and `--no-log` to avoid appending the default `LINT` entry to `log.md`.
+
+`a-inf fixlink --remove-broken` is fully deterministic and does not invoke Codex. It recomputes the current page registry, replaces unresolved wikilinks with their visible plain text, skips fenced code blocks and frontmatter, and revalidates each exact line span before writing. Use `--dry-run` to inspect the removal report without editing files.
 
 ## Configuration
 

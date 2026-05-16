@@ -29,7 +29,7 @@ VALID_RECIPES = {
     "research",
 }
 VALID_VIEWS = {"table", "cards", "list"}
-CONTENT_FOLDERS = ["concepts", "entities", "skills", "references", "synthesis", "journal", "projects"]
+CONTENT_FOLDERS = ["concepts", "entities", "references", "synthesis", "projects"]
 ALLOWED_BASE_KEYS = {"filters", "formulas", "properties", "summaries", "views"}
 ALLOWED_VIEW_KEYS = {"type", "name", "limit", "groupBy", "filters", "order", "summaries"}
 PROP_RE = re.compile(r"^(?:file|formula|note)\.[A-Za-z_][A-Za-z0-9_.-]*$|^[A-Za-z_][A-Za-z0-9_.-]*$")

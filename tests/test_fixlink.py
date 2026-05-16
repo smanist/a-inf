@@ -64,7 +64,7 @@ def test_fixlink_candidates_include_exact_mentions_and_skip_existing_links(tmp_p
     write_page(vault, "references/source.md", title="Source", tags=["systems"], body="Target Concept appears in prose.")
     write_page(vault, "references/linked.md", title="Linked", tags=["systems"], body="Already [[concepts/target]]. Target Concept again.")
     for index in range(3):
-        write_page(vault, f"skills/cluster-{index}.md", title=f"Cluster {index}", tags=["systems"])
+        write_page(vault, f"references/cluster-{index}.md", title=f"Cluster {index}", tags=["systems"])
 
     packet = build_packet(vault)
     candidates = packet["candidates"]
@@ -121,7 +121,7 @@ def test_apply_inline_and_related_wikilinks(tmp_path: Path) -> None:
     write_page(vault, "concepts/target.md", title="Target Concept", tags=["systems"])
     source = write_page(vault, "references/source.md", title="Source", tags=["systems"], body="Target Concept appears.")
     for index in range(5):
-        write_page(vault, f"skills/cluster-{index}.md", title=f"Cluster {index}", tags=["systems"])
+        write_page(vault, f"references/cluster-{index}.md", title=f"Cluster {index}", tags=["systems"])
     packet = build_packet(vault)
     inline = next(candidate for candidate in packet["candidates"] if candidate["kind"] == "inline")
     related = next(candidate for candidate in packet["candidates"] if candidate["kind"] == "related")
@@ -226,6 +226,79 @@ def test_run_fixlink_dry_run_validates_without_editing(tmp_path: Path, monkeypat
     assert json.loads(capsys.readouterr().out)["status"] == "dry_run"
 
 
+def test_remove_broken_links_is_deterministic_and_skips_codex(tmp_path: Path, monkeypatch, capsys) -> None:
+    vault = make_vault(tmp_path)
+    write_page(vault, "concepts/existing.md", title="Existing")
+    source = write_page(
+        vault,
+        "references/source.md",
+        body=(
+            "Keep [[concepts/existing|Existing Link]].\n"
+            "Drop [[missing-page|Missing Label]] and [[folder/other.md]].\n"
+            "```text\n"
+            "[[code-only-missing]]\n"
+            "```\n"
+        ),
+    )
+
+    monkeypatch.setattr(fixlink.shutil, "which", lambda _: (_ for _ in ()).throw(AssertionError("codex called")))
+
+    result = fixlink.run_fixlink(
+        SimpleNamespace(
+            print_prompt=False,
+            no_codex=False,
+            dry_run=False,
+            remove_broken=True,
+            json=True,
+            no_log=True,
+            codex_bin="codex",
+            sandbox="read-only",
+            add_dir=[],
+        ),
+        vault,
+        {"OBSIDIAN_LINK_FORMAT": "wikilink"},
+    )
+
+    assert result == 0
+    text = source.read_text(encoding="utf-8")
+    assert "Keep [[concepts/existing|Existing Link]]." in text
+    assert "Drop Missing Label and other." in text
+    assert "[[code-only-missing]]" in text
+    report = json.loads(capsys.readouterr().out)
+    assert report["mode"] == "remove_broken"
+    assert report["summary"]["links_removed"] == 2
+    assert report["summary"]["pages_modified"] == 1
+
+
+def test_remove_broken_links_dry_run_does_not_edit(tmp_path: Path, capsys) -> None:
+    vault = make_vault(tmp_path)
+    source = write_page(vault, "references/source.md", body="Drop [[missing-page|Missing Label]].\n")
+    original = source.read_text(encoding="utf-8")
+
+    result = fixlink.run_fixlink(
+        SimpleNamespace(
+            print_prompt=False,
+            no_codex=False,
+            dry_run=True,
+            remove_broken=True,
+            json=True,
+            no_log=True,
+            codex_bin="codex",
+            sandbox="workspace-write",
+            add_dir=[],
+        ),
+        vault,
+        {"OBSIDIAN_LINK_FORMAT": "wikilink"},
+    )
+
+    assert result == 0
+    assert source.read_text(encoding="utf-8") == original
+    report = json.loads(capsys.readouterr().out)
+    assert report["status"] == "dry_run"
+    assert report["summary"]["candidates"] == 1
+    assert report["summary"]["links_removed"] == 0
+
+
 def test_cli_rename_registers_fixlink_and_removes_cross_link() -> None:
     parser = cli.build_parser()
 
@@ -235,6 +308,10 @@ def test_cli_rename_registers_fixlink_and_removes_cross_link() -> None:
     assert "cross-linker" not in cli.QMD_SYNC_SKILLS
     with pytest.raises(SystemExit):
         parser.parse_args(["cross-link"])
+
+    remove_args = parser.parse_args(["fixlink", "--remove-broken", "--dry-run"])
+    assert remove_args.alias == "fixlink"
+    assert remove_args.remove_broken is True
 
 
 def test_cli_fixlink_dispatch_routes_to_engine(tmp_path: Path, monkeypatch) -> None:

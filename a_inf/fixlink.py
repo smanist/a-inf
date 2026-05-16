@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,6 +23,7 @@ from a_inf.runs import timestamped_run_dir
 MAX_CANDIDATES = 200
 MAX_RELATED_PER_CLUSTER = 80
 VALID_ACTIONS = {"add_inline", "add_related", "skip"}
+WIKILINK_PATTERN = re.compile(r"\[\[([^\]]+)\]\]")
 
 
 class FixlinkError(Exception):
@@ -53,6 +55,9 @@ class ValidatedRepairPlan:
 
 def run_fixlink(args: Any, vault: Path, config: dict[str, str] | None = None) -> int:
     config = config or load_wiki_config(vault)
+    if getattr(args, "remove_broken", False):
+        return run_remove_broken(args, vault, config)
+
     run = create_run(vault)
     lint_packet = lint.build_lint_packet(vault, config)
     packet = build_fixlink_packet(vault, config, lint_packet, run.repair_plan_path)
@@ -124,6 +129,44 @@ def run_fixlink(args: Any, vault: Path, config: dict[str, str] | None = None) ->
         return 1
 
 
+def run_remove_broken(args: Any, vault: Path, config: dict[str, str]) -> int:
+    run = create_run(vault)
+    pre_packet = lint.build_lint_packet(vault, config)
+    packet = build_broken_link_removal_packet(vault, config, pre_packet)
+    write_json(run.packet_path, packet)
+
+    if getattr(args, "print_prompt", False):
+        print(json.dumps(packet, indent=2, sort_keys=True))
+        return 0
+
+    if getattr(args, "dry_run", False):
+        applied = empty_broken_link_removal()
+        post_packet = pre_packet
+        status = "dry_run"
+        warnings: list[str] = []
+    else:
+        applied, warnings = apply_broken_link_removals(packet, vault)
+        post_packet = lint.build_lint_packet(vault, config)
+        status = "completed"
+        if applied["links_removed"] and not getattr(args, "no_log", False):
+            append_remove_broken_log(vault, applied, post_packet)
+            write_remove_broken_hot(vault, applied)
+        if applied["links_removed"] and getattr(args, "sandbox", "workspace-write") != "read-only":
+            if ensure_qmd_collection(vault, config) and not sync_qmd(vault, config):
+                warnings.append("QMD sync failed after removing broken links; wiki files were still updated.")
+
+    report = build_remove_broken_report(
+        packet,
+        status=status,
+        applied=applied,
+        post_lint_packet=post_packet,
+        warnings=warnings,
+    )
+    write_json(run.report_path, report)
+    print_report(report, json_output=getattr(args, "json", False))
+    return 0
+
+
 def build_fixlink_packet(
     vault: Path, config: dict[str, str], lint_packet: dict[str, Any], repair_plan_path: Path
 ) -> dict[str, Any]:
@@ -146,6 +189,76 @@ def build_fixlink_packet(
             "fragmented_tag_clusters": len(lint_packet.get("findings", {}).get("fragmented_tag_clusters", [])),
         },
     }
+
+
+def build_broken_link_removal_packet(
+    vault: Path, config: dict[str, str], lint_packet: dict[str, Any]
+) -> dict[str, Any]:
+    pages = lint.build_page_registry(vault)
+    resolver = lint.LinkResolver(pages)
+    removals: list[dict[str, Any]] = []
+    for page in sorted(pages.values(), key=lambda item: item.rel):
+        text = page.path.read_text(encoding="utf-8")
+        editable = editable_ranges(text)
+        for line_no, line in enumerate(text.splitlines(), start=1):
+            if line_no not in editable:
+                continue
+            for match in WIKILINK_PATTERN.finditer(line):
+                raw = match.group(0)
+                target = wikilink_target(raw)
+                if lint.is_existing_source_archive_link(vault, page, target):
+                    continue
+                if resolver.resolve(target):
+                    continue
+                removals.append(
+                    {
+                        "removal_id": f"remove-broken-{len(removals) + 1:04d}",
+                        "source": page.rel,
+                        "line": line_no,
+                        "start": match.start(),
+                        "end": match.end(),
+                        "raw": raw,
+                        "target": target,
+                        "replacement": wikilink_plaintext(raw),
+                    }
+                )
+    return {
+        "version": 1,
+        "generated_at": now_iso(),
+        "vault": str(vault),
+        "link_format": config.get("OBSIDIAN_LINK_FORMAT", "wikilink"),
+        "mode": "remove_broken",
+        "lint_packet": lint_packet,
+        "removals": removals,
+        "summary": {
+            "broken_wikilinks": len(lint_packet.get("findings", {}).get("broken_wikilinks", [])),
+            "editable_broken_wikilinks": len(removals),
+        },
+    }
+
+
+def wikilink_target(raw: str) -> str:
+    inner = raw[2:-2].strip()
+    return inner.split("|", 1)[0].strip()
+
+
+def wikilink_plaintext(raw: str) -> str:
+    inner = raw[2:-2].strip()
+    target, separator, display = inner.partition("|")
+    if separator:
+        alias = display.strip()
+        if alias:
+            return alias
+    return target_plaintext(target)
+
+
+def target_plaintext(target: str) -> str:
+    cleaned = lint.clean_link_target(target)
+    if not cleaned:
+        return ""
+    if "/" in cleaned or cleaned.endswith(".md"):
+        return Path(cleaned).with_suffix("").name
+    return cleaned
 
 
 def build_candidates(
@@ -580,6 +693,68 @@ def apply_repair_plan(plan: ValidatedRepairPlan, vault: Path, config: dict[str, 
     }
 
 
+def apply_broken_link_removals(packet: dict[str, Any], vault: Path) -> tuple[dict[str, Any], list[str]]:
+    current_pages = lint.build_page_registry(vault)
+    resolver = lint.LinkResolver(current_pages)
+    by_source: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for removal in packet.get("removals", []) or []:
+        if isinstance(removal, dict):
+            by_source[str(removal.get("source") or "")].append(removal)
+
+    modified_pages: set[str] = set()
+    links_removed = 0
+    skipped = 0
+    warnings: list[str] = []
+    for source, removals in sorted(by_source.items()):
+        page = current_pages.get(source)
+        if page is None:
+            skipped += len(removals)
+            warnings.append(f"Skipped {len(removals)} stale removals for missing page {source}.")
+            continue
+        path = vault / source
+        text = path.read_text(encoding="utf-8")
+        lines = text.splitlines()
+        source_modified = False
+        for removal in sorted(removals, key=removal_sort_key, reverse=True):
+            line_no = int(removal.get("line") or 0)
+            start = int(removal.get("start") or 0)
+            end = int(removal.get("end") or 0)
+            raw = str(removal.get("raw") or "")
+            target = str(removal.get("target") or "")
+            if line_no < 1 or line_no > len(lines) or lines[line_no - 1][start:end] != raw:
+                skipped += 1
+                warnings.append(f"Skipped stale broken-link removal {removal.get('removal_id')} in {source}.")
+                continue
+            if lint.is_existing_source_archive_link(vault, page, target) or resolver.resolve(target):
+                skipped += 1
+                warnings.append(f"Skipped now-resolved link {raw} in {source}.")
+                continue
+            replacement = str(removal.get("replacement") or "")
+            line_index = line_no - 1
+            lines[line_index] = lines[line_index][:start] + replacement + lines[line_index][end:]
+            links_removed += 1
+            source_modified = True
+        if source_modified:
+            path.write_text("\n".join(lines) + ("\n" if text.endswith("\n") else ""), encoding="utf-8")
+            modified_pages.add(source)
+    return (
+        {
+            "links_removed": links_removed,
+            "pages_modified": sorted(modified_pages),
+            "removals_skipped": skipped,
+        },
+        warnings,
+    )
+
+
+def empty_broken_link_removal() -> dict[str, Any]:
+    return {"links_removed": 0, "pages_modified": [], "removals_skipped": 0}
+
+
+def removal_sort_key(removal: dict[str, Any]) -> tuple[int, int]:
+    return int(removal.get("line") or 0), int(removal.get("start") or 0)
+
+
 def inline_sort_key(decision: ValidatedDecision) -> tuple[int, int]:
     match = match_by_id(decision.candidate, decision.match_id or "") or {}
     return int(match.get("line", 0)), int(match.get("start", 0))
@@ -675,12 +850,63 @@ def append_log(vault: Path, applied: dict[str, Any], post_packet: dict[str, Any]
         path.write_text(f"---\ntitle: Wiki Log\ntags: {managed_tags()}\n---\n\n# Wiki Log\n\n" + line, encoding="utf-8")
 
 
+def append_remove_broken_log(vault: Path, applied: dict[str, Any], post_packet: dict[str, Any]) -> None:
+    remaining = len(post_packet.get("findings", {}).get("broken_wikilinks", []))
+    line = (
+        f"- [{now_iso()}] FIXLINK_REMOVE_BROKEN links_removed={applied['links_removed']} "
+        f"pages_modified={len(applied['pages_modified'])} broken_links_remaining={remaining} "
+        f"removals_skipped={applied['removals_skipped']}\n"
+    )
+    path = vault / "log.md"
+    if path.exists():
+        ensure_managed_tag(path, "Wiki Log")
+        path.write_text(path.read_text(encoding="utf-8").rstrip() + "\n" + line, encoding="utf-8")
+    else:
+        path.write_text(f"---\ntitle: Wiki Log\ntags: {managed_tags()}\n---\n\n# Wiki Log\n\n" + line, encoding="utf-8")
+
+
 def write_hot(vault: Path, applied: dict[str, Any]) -> None:
     now = now_iso()
     current = vault / "hot.md"
     recent_line = (
         f"Fixlinked {applied['links_added']} links across {len(applied['pages_modified'])} pages; "
         f"{applied['misc_affinity_updated']} misc affinity blocks updated."
+    )
+    content = [
+        "---",
+        "title: Hot Cache",
+        f"tags: {managed_tags()}",
+        f"updated: {now}",
+        "---",
+        "",
+        "# Hot Cache",
+        "",
+        "## Recent Activity",
+        f"- {recent_line}",
+        "",
+        "## Active Threads",
+        "- None.",
+        "",
+        "## Key Takeaways",
+        "- None.",
+        "",
+        "## Flagged Contradictions",
+        "- None.",
+        "",
+    ]
+    if current.exists():
+        old = current.read_text(encoding="utf-8")
+        activity = extract_recent_activity(old)
+        content[8:9] = [f"- {recent_line}", *activity[:2]]
+    current.write_text("\n".join(content), encoding="utf-8")
+
+
+def write_remove_broken_hot(vault: Path, applied: dict[str, Any]) -> None:
+    now = now_iso()
+    current = vault / "hot.md"
+    recent_line = (
+        f"Removed {applied['links_removed']} broken wikilinks across {len(applied['pages_modified'])} pages; "
+        f"{applied['removals_skipped']} stale removals skipped."
     )
     content = [
         "---",
@@ -763,6 +989,36 @@ def build_report(
     }
 
 
+def build_remove_broken_report(
+    packet: dict[str, Any],
+    *,
+    status: str,
+    applied: dict[str, Any],
+    post_lint_packet: dict[str, Any],
+    warnings: list[str] | None = None,
+) -> dict[str, Any]:
+    pre = packet["lint_packet"]
+    post = post_lint_packet
+    return {
+        "version": 1,
+        "status": status,
+        "mode": "remove_broken",
+        "summary": {
+            "candidates": len(packet.get("removals", [])),
+            "decisions": len(packet.get("removals", [])),
+            "links_added": 0,
+            "links_removed": applied.get("links_removed", 0),
+            "pages_modified": len(applied.get("pages_modified", [])),
+            "broken_wikilinks_before": len(pre.get("findings", {}).get("broken_wikilinks", [])),
+            "broken_wikilinks_after": len(post.get("findings", {}).get("broken_wikilinks", [])),
+            "removals_skipped": applied.get("removals_skipped", 0),
+        },
+        "applied": applied,
+        "warnings": warnings or [],
+        "candidate_sample": packet.get("removals", [])[:20],
+    }
+
+
 def print_report(report: dict[str, Any], *, json_output: bool) -> None:
     if json_output:
         print(json.dumps(report, indent=2, sort_keys=True))
@@ -774,11 +1030,22 @@ def print_report(report: dict[str, Any], *, json_output: bool) -> None:
         f"- **Status:** {report['status']}",
         f"- **Candidates:** {summary['candidates']}",
         f"- **Decisions:** {summary['decisions']}",
-        f"- **Links added:** {summary['links_added']}",
         f"- **Pages modified:** {summary['pages_modified']}",
-        f"- **Orphans:** {summary['orphans_before']} -> {summary['orphans_after']}",
-        f"- **Fragmented tag clusters:** {summary['fragmented_clusters_before']} -> {summary['fragmented_clusters_after']}",
     ]
+    if "links_removed" not in summary:
+        lines.append(f"- **Links added:** {summary['links_added']}")
+    else:
+        lines.append(f"- **Links removed:** {summary['links_removed']}")
+    if "broken_wikilinks_before" in summary:
+        lines.append(f"- **Broken wikilinks:** {summary['broken_wikilinks_before']} -> {summary['broken_wikilinks_after']}")
+    if "orphans_before" in summary:
+        lines.append(f"- **Orphans:** {summary['orphans_before']} -> {summary['orphans_after']}")
+    if "fragmented_clusters_before" in summary:
+        lines.append(
+            f"- **Fragmented tag clusters:** {summary['fragmented_clusters_before']} -> {summary['fragmented_clusters_after']}"
+        )
+    if summary.get("removals_skipped"):
+        lines.append(f"- **Removals skipped:** {summary['removals_skipped']}")
     if report.get("warnings"):
         lines.extend(["", "### Warnings", ""])
         lines.extend(f"- {warning}" for warning in report["warnings"])

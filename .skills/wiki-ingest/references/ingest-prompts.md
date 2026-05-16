@@ -13,7 +13,7 @@ When reading a source document, ask yourself:
    People, tools, organizations, projects → entity pages.
 
 3. **What does this document teach you how to do?**
-   Procedures, workflows, techniques → skills pages.
+   Procedures, workflows, techniques → concepts pages.
 
 4. **What claims does this document make?**
    Each claim needs a source attribution. If it contradicts an existing wiki claim, note the contradiction.

@@ -66,7 +66,7 @@ def isolate_qmd_home(tmp_path: Path, monkeypatch) -> None:
 
 def make_vault(tmp_path: Path) -> Path:
     vault = tmp_path / "vault"
-    for dirname in ["concepts", "entities", "skills", "references", "synthesis", "journal", "projects", "_raw"]:
+    for dirname in ["concepts", "entities", "references", "synthesis", "projects", "_raw"]:
         (vault / dirname).mkdir(parents=True)
     (vault / ".manifest.json").write_text(json.dumps({"version": 1, "sources": {}, "projects": {}, "stats": {}}), encoding="utf-8")
     (vault / "index.md").write_text("---\ntitle: Wiki Index\n---\n\n# Wiki Index\n", encoding="utf-8")

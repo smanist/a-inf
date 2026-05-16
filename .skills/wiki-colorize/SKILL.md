@@ -80,11 +80,9 @@ The CLI uses the seven vault top-level folders in this fixed order so colors are
 |---|---|
 | `concepts` | 0 (blue) |
 | `entities` | 1 (orange) |
-| `skills` | 2 (red) |
-| `references` | 3 (teal) |
-| `synthesis` | 4 (green) |
-| `projects` | 5 (yellow) |
-| `journal` | 6 (purple) |
+| `references` | 2 (teal) |
+| `synthesis` | 3 (green) |
+| `projects` | 4 (yellow) |
 
 It emits one entry per folder that exists and contains at least one `.md` file:
 

@@ -32,10 +32,8 @@ $OBSIDIAN_VAULT_PATH/
 │   │   ├── archive-meta.json
 │   │   ├── concepts/
 │   │   ├── entities/
-│   │   ├── skills/
 │   │   ├── references/
 │   │   ├── synthesis/
-│   │   ├── journal/
 │   │   ├── projects/
 │   │   ├── index.md
 │   │   ├── log.md
@@ -86,7 +84,7 @@ Same as Mode 1 above, but with reason `"rebuild"`.
 
 ### Step 2: Clear live wiki
 
-Remove all content from the category directories (`concepts/`, `entities/`, `skills/`, etc.) and the `projects/` directory. Keep:
+Remove all content from the category directories (`concepts/`, `entities/`, `references/`, `synthesis/`) and the `projects/` directory. Keep:
 - `_archives/` (obviously)
 - `.obsidian/` (Obsidian config)
 - `.env` (if present in vault)

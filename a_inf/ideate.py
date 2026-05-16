@@ -6,6 +6,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,10 +18,17 @@ from a_inf.qmd import collection_name_for_vault, qmd_env, resolve_qmd, run_qmd
 from a_inf.runs import timestamped_run_dir
 
 
-WIKI_PAGE_DIRS = ["concepts", "entities", "skills", "references", "synthesis", "journal", "projects"]
+WIKI_PAGE_DIRS = ["concepts", "entities", "references", "synthesis", "projects"]
 MAX_BODY_CHARS = 1600
 MAX_SUPPORT_CHARS = 2200
 MAX_AUTO_CONTEXT = 5
+IDEATE_EDITOR_MARKER = "<!-- a-inf-ideate: write your idea below this line -->"
+
+
+class IdeateInputError(Exception):
+    def __init__(self, message: str, status: int = 2) -> None:
+        super().__init__(message)
+        self.status = status
 
 
 @dataclass(frozen=True)
@@ -44,13 +52,17 @@ class Page:
 
 def run_ideate(args: Any, vault: Path, config: dict[str, str] | None = None) -> int:
     config = config or load_wiki_config(vault)
-    idea = " ".join(getattr(args, "args", [])).strip()
+    try:
+        idea, entries = resolve_ideate_input(args)
+    except IdeateInputError as exc:
+        print(str(exc), file=sys.stderr)
+        return exc.status
     if not idea:
         print("a-inf ideate requires an idea.", file=sys.stderr)
         return 2
 
     run = create_run(vault, idea)
-    packet = build_ideation_packet(vault, config, idea, getattr(args, "entry", []) or [], run.output_path)
+    packet = build_ideation_packet(vault, config, idea, entries, run.output_path)
     write_json(run.packet_path, packet)
 
     prompt = build_prompt(vault, run.packet_path, run.output_path)
@@ -103,7 +115,96 @@ def run_ideate(args: Any, vault: Path, config: dict[str, str] | None = None) -> 
     report = build_report(packet, status="completed", warnings=warnings)
     write_json(run.report_path, report)
     print_report(report, json_output=getattr(args, "json", False))
+    if is_vscode_ideate_mode(args):
+        open_ideation_output_in_vscode(getattr(args, "vscode_bin", "code"), run.output_path)
     return 0
+
+
+def resolve_ideate_input(args: Any) -> tuple[str, list[str]]:
+    idea = " ".join(getattr(args, "args", [])).strip()
+    entries = list(getattr(args, "entry", []) or [])
+    if not is_vscode_ideate_mode(args):
+        return idea, entries
+    return read_vscode_idea(getattr(args, "vscode_bin", "code"), initial_idea=idea, initial_entries=entries)
+
+
+def is_vscode_ideate_mode(args: Any) -> bool:
+    return getattr(args, "mode", "inline") == "vscode"
+
+
+def read_vscode_idea(vscode_bin: str, *, initial_idea: str = "", initial_entries: list[str] | None = None) -> tuple[str, list[str]]:
+    binary = shutil.which(vscode_bin)
+    if binary is None:
+        raise IdeateInputError(
+            f"VS Code executable not found: {vscode_bin}. Install the 'code' shell command or pass --vscode-bin.",
+            status=127,
+        )
+
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".md", prefix="a-inf-ideate-", delete=False) as handle:
+            temp_path = Path(handle.name)
+            handle.write(ideate_editor_template(initial_idea, initial_entries or []))
+
+        print(f"Opening idea draft in VS Code: {temp_path}", file=sys.stderr)
+        print("Edit entry: lines, write the idea, then save and close the file to run ideate.", file=sys.stderr)
+        result = subprocess.run([binary, "--wait", str(temp_path)])
+        if result.returncode != 0:
+            raise IdeateInputError(f"VS Code exited with status {result.returncode}.", status=result.returncode)
+        return extract_ideate_input_from_editor_text(temp_path.read_text(encoding="utf-8"))
+    finally:
+        if temp_path is not None:
+            try:
+                temp_path.unlink()
+            except FileNotFoundError:
+                pass
+
+
+def ideate_editor_template(initial_idea: str = "", initial_entries: list[str] | None = None) -> str:
+    entry_lines = [f"entry: {entry}" for entry in initial_entries or []]
+    if not entry_lines:
+        entry_lines = ["entry: "]
+    idea = initial_idea.strip()
+    body = f"{idea}\n" if idea else "\n"
+    return "\n".join(
+        [
+            "<!--",
+            "Write entry: lines for explicit wiki context. They map to repeated --entry flags.",
+            "Write the idea below the marker. Save and close this VS Code file to run ideate.",
+            "-->",
+            *entry_lines,
+            "",
+            IDEATE_EDITOR_MARKER,
+            body,
+        ]
+    )
+
+
+def extract_ideate_input_from_editor_text(text: str) -> tuple[str, list[str]]:
+    header = text
+    body = text
+    if IDEATE_EDITOR_MARKER in text:
+        header, body = text.split(IDEATE_EDITOR_MARKER, 1)
+    entries: list[str] = []
+    for line in header.splitlines():
+        stripped = line.strip()
+        if not stripped.lower().startswith("entry:"):
+            continue
+        value = stripped[len("entry:") :].strip()
+        if value:
+            entries.append(value)
+    idea = re.sub(r"(?s)<!--.*?-->", "", body).strip()
+    return idea, entries
+
+
+def open_ideation_output_in_vscode(vscode_bin: str, path: Path) -> None:
+    binary = shutil.which(vscode_bin)
+    if binary is None:
+        print(f"warning: VS Code executable not found, could not open {path}", file=sys.stderr)
+        return
+    result = subprocess.run([binary, str(path)])
+    if result.returncode != 0:
+        print(f"warning: VS Code exited with status {result.returncode} while opening {path}", file=sys.stderr)
 
 
 def build_ideation_packet(

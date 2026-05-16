@@ -89,7 +89,7 @@ reference deserves a stable graph node.
 
 Plan roughly 10-15 page operations per ingest unless the selected batch is very small. For each page:
 
-- Use a valid wiki page path under `concepts/`, `entities/`, `skills/`, `references/`, `synthesis/`, `journal/`, or `projects/`.
+- Use a valid wiki page path under `concepts/`, `entities/`, `references/`, `synthesis/`, or `projects/`.
 - Never emit two operations for the same page path.
 - Use `action: "create"` only for pages that do not already exist in the provided context.
 - Use `action: "update"` only for pages that already exist.

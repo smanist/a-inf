@@ -6,6 +6,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,7 +25,7 @@ from a_inf.qmd import (
 from a_inf.runs import runs_root, unique_dir
 
 
-WIKI_PAGE_DIRS = {"concepts", "entities", "skills", "references", "synthesis", "journal", "projects"}
+WIKI_PAGE_DIRS = {"concepts", "entities", "references", "synthesis", "projects"}
 FILTERED_MODE_TRIGGERS = [
     "public only",
     "user-facing",
@@ -57,6 +58,13 @@ SOURCE_DETAIL_TRIGGERS = {
 SOURCE_DETAIL_MAX_CHARS = 200_000
 SOURCE_DETAIL_SNIPPET_CHARS = 900
 QUERY_OUTPUT_FILENAME = "answer.md"
+QUERY_EDITOR_MARKER = "<!-- a-inf-query: write your query below this line -->"
+
+
+class QueryInputError(Exception):
+    def __init__(self, message: str, status: int = 2) -> None:
+        super().__init__(message)
+        self.status = status
 
 
 @dataclass(frozen=True)
@@ -105,7 +113,11 @@ class Candidate:
 
 
 def run_query(args: Any, vault: Path, config: dict[str, str]) -> int:
-    question = " ".join(getattr(args, "args", [])).strip()
+    try:
+        question = resolve_query_question(args)
+    except QueryInputError as exc:
+        print(str(exc), file=sys.stderr)
+        return exc.status
     if not question:
         print("a-inf query requires a question.", file=sys.stderr)
         return 2
@@ -154,8 +166,81 @@ def run_query(args: Any, vault: Path, config: dict[str, str]) -> int:
             print(f"Could not save query output: {exc}", file=sys.stderr)
             return 2
         print(f"Saved query output to {output_path.relative_to(vault)}")
+        if is_vscode_query_mode(args):
+            open_query_answer_in_vscode(getattr(args, "vscode_bin", "code"), output_path)
         return 0
     return subprocess.call(command, cwd=vault, env=qmd_env(os.environ, vault))
+
+
+def resolve_query_question(args: Any) -> str:
+    inline_question = " ".join(getattr(args, "args", [])).strip()
+    if not is_vscode_query_mode(args):
+        return inline_question
+    return read_vscode_query(getattr(args, "vscode_bin", "code"), initial_query=inline_question)
+
+
+def is_vscode_query_mode(args: Any) -> bool:
+    return getattr(args, "mode", "inline") == "vscode"
+
+
+def read_vscode_query(vscode_bin: str, *, initial_query: str = "") -> str:
+    binary = shutil.which(vscode_bin)
+    if binary is None:
+        raise QueryInputError(
+            f"VS Code executable not found: {vscode_bin}. Install the 'code' shell command or pass --vscode-bin.",
+            status=127,
+        )
+
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".md", prefix="a-inf-query-", delete=False) as handle:
+            temp_path = Path(handle.name)
+            handle.write(query_editor_template(initial_query))
+
+        print(f"Opening query draft in VS Code: {temp_path}", file=sys.stderr)
+        print("Save and close the file to run the query.", file=sys.stderr)
+        result = subprocess.run([binary, "--wait", str(temp_path)])
+        if result.returncode != 0:
+            raise QueryInputError(f"VS Code exited with status {result.returncode}.", status=result.returncode)
+        return extract_query_from_editor_text(temp_path.read_text(encoding="utf-8"))
+    finally:
+        if temp_path is not None:
+            try:
+                temp_path.unlink()
+            except FileNotFoundError:
+                pass
+
+
+def query_editor_template(initial_query: str = "") -> str:
+    initial = initial_query.strip()
+    body = f"{initial}\n" if initial else "\n"
+    return "\n".join(
+        [
+            "<!--",
+            "Write your a-inf query below. Save and close this VS Code file to run it.",
+            "Markdown is fine; this comment block is ignored.",
+            "-->",
+            QUERY_EDITOR_MARKER,
+            body,
+        ]
+    )
+
+
+def extract_query_from_editor_text(text: str) -> str:
+    if QUERY_EDITOR_MARKER in text:
+        text = text.split(QUERY_EDITOR_MARKER, 1)[1]
+    text = re.sub(r"(?s)<!--.*?-->", "", text)
+    return text.strip()
+
+
+def open_query_answer_in_vscode(vscode_bin: str, path: Path) -> None:
+    binary = shutil.which(vscode_bin)
+    if binary is None:
+        print(f"warning: VS Code executable not found, could not open {path}", file=sys.stderr)
+        return
+    result = subprocess.run([binary, str(path)])
+    if result.returncode != 0:
+        print(f"warning: VS Code exited with status {result.returncode} while opening {path}", file=sys.stderr)
 
 
 def should_save_query_output(args: Any) -> bool:

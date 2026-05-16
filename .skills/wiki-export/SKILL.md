@@ -37,7 +37,7 @@ Glob all `.md` files in the vault (excluding `_archives/`, `_raw/`, `.obsidian/`
 For each page, extract from frontmatter:
 - `id` — relative path from vault root, without `.md` extension (e.g. `concepts/transformers`)
 - `label` — `title` field from frontmatter, or filename if missing
-- `category` — directory prefix (`concepts`, `entities`, `skills`, `references`, `synthesis`, `projects`, or `journal`)
+- `category` — directory prefix (`concepts`, `entities`, `references`, `synthesis`, or `projects`)
 - `tags` — array from frontmatter tags field
 - `summary` — frontmatter `summary` field if present
 

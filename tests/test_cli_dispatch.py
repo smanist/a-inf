@@ -319,6 +319,19 @@ def test_cli_parser_accepts_insights_flags() -> None:
     assert args.args == ["hubs"]
 
 
+def test_top_level_help_groups_commands_by_execution_model() -> None:
+    parser = cli.build_parser()
+
+    help_text = parser.format_help()
+
+    assert "CLI-native commands:" in help_text
+    assert "Python-owned workflows:" in help_text
+    assert "Thin Codex skill dispatchers:" in help_text
+    assert "Run the wiki-" not in help_text
+    assert "    ingest      Import sources; writes wiki pages" in help_text
+    assert "    research    Research a topic; Codex writes source" in help_text
+
+
 def test_cli_parser_accepts_lint_save_flags() -> None:
     parser = cli.build_parser()
 

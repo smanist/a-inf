@@ -26,7 +26,7 @@ from a_inf.managed_files import ensure_managed_tag, managed_tags
 from a_inf.qmd import QmdInfo, ensure_qmd_collection, qmd_env, qmd_state_dirs, require_qmd, resolve_qmd, sync_qmd
 
 
-WIKI_PAGE_DIRS = ["concepts", "entities", "skills", "references", "synthesis", "journal", "projects"]
+WIKI_PAGE_DIRS = ["concepts", "entities", "references", "synthesis", "projects"]
 HTML_SUFFIXES = {".htm", ".html"}
 TEXT_SUFFIXES = {
     ".bash",
@@ -2071,10 +2071,8 @@ def rebuild_index(vault: Path, config: dict[str, str], now: str) -> None:
     headings = {
         "concepts": "Concepts",
         "entities": "Entities",
-        "skills": "Skills",
         "references": "References",
         "synthesis": "Synthesis",
-        "journal": "Journal",
         "projects": "Projects",
     }
     lines = [

@@ -51,6 +51,8 @@ def args(**overrides: object) -> SimpleNamespace:
         "alias": "ideate",
         "args": ["use", "laplacian", "smoothing"],
         "entry": [],
+        "mode": "inline",
+        "vscode_bin": "code",
         "print_prompt": False,
         "no_codex": False,
         "json": False,
@@ -60,6 +62,48 @@ def args(**overrides: object) -> SimpleNamespace:
     }
     values.update(overrides)
     return SimpleNamespace(**values)
+
+
+def test_cli_ideate_accepts_vscode_mode_and_entries() -> None:
+    parser = cli.build_parser()
+
+    parsed = parser.parse_args(
+        ["ideate", "--mode", "vscode", "--entry", "concepts/foo.md", "--vscode-bin", "code-insiders", "draft"]
+    )
+
+    assert parsed.alias == "ideate"
+    assert parsed.mode == "vscode"
+    assert parsed.vscode_bin == "code-insiders"
+    assert parsed.entry == ["concepts/foo.md"]
+    assert parsed.args == ["draft"]
+
+
+def test_cli_ideate_accepts_vscode_shortcut() -> None:
+    parser = cli.build_parser()
+
+    parsed = parser.parse_args(["ideate", "--vscode"])
+
+    assert parsed.mode == "vscode"
+    assert parsed.vscode_bin == "code"
+
+
+def test_extract_ideate_input_reads_entry_lines_and_body() -> None:
+    idea, entries = ideate.extract_ideate_input_from_editor_text(
+        "\n".join(
+            [
+                "<!-- ignored -->",
+                "entry: concepts/laplace.md",
+                "entry: [[Sparse Solver]]",
+                "entry: ",
+                "",
+                ideate.IDEATE_EDITOR_MARKER,
+                "Use smoothing ideas here.",
+            ]
+        )
+    )
+
+    assert entries == ["concepts/laplace.md", "[[Sparse Solver]]"]
+    assert idea == "Use smoothing ideas here."
 
 
 def test_ideate_print_prompt_includes_skill_packet_and_output(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -163,8 +207,77 @@ def test_output_without_a_inf_tag_fails_validation(tmp_path: Path, monkeypatch, 
     assert "tags: [a-inf]" in capsys.readouterr().out
 
 
+def test_ideate_vscode_mode_reads_entries_and_opens_output(tmp_path: Path, monkeypatch, capsys) -> None:
+    vault = make_vault(tmp_path)
+    write_page(vault, "concepts/laplace.md", title="Laplace Operator")
+    write_page(vault, "references/solver.md", title="Sparse Solver")
+    code_calls: list[list[str]] = []
+
+    monkeypatch.setattr(ideate, "resolve_qmd", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(ideate.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+
+    def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        if command[0] == "/usr/local/bin/code":
+            code_calls.append(command)
+            if "--wait" in command:
+                draft = Path(command[-1])
+                assert "entry: concepts/laplace.md" in draft.read_text(encoding="utf-8")
+                draft.write_text(
+                    "\n".join(
+                        [
+                            "entry: concepts/laplace.md",
+                            "entry: Sparse Solver",
+                            "",
+                            ideate.IDEATE_EDITOR_MARKER,
+                            "Use Laplacian smoothing for solver handoff.",
+                        ]
+                    ),
+                    encoding="utf-8",
+                )
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        raise AssertionError(f"unexpected run command: {command}")
+
+    def fake_call(command: list[str], cwd: Path, env: dict[str, str] | None = None) -> int:
+        marker = "Write Markdown idea packet to: "
+        output_line = next(line for line in command[-1].splitlines() if line.startswith(marker))
+        output_path = Path(output_line[len(marker) :])
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text("---\ntitle: Idea\ntags: [a-inf]\n---\n\n# Idea\n", encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr(ideate.subprocess, "run", fake_run)
+    monkeypatch.setattr(ideate.subprocess, "call", fake_call)
+
+    result = ideate.run_ideate(
+        args(args=["seed idea"], entry=["concepts/laplace.md"], mode="vscode", vscode_bin="code"),
+        vault,
+        {},
+    )
+
+    packets = list((vault / "_runs").glob("ideate-*/packet.json"))
+    outputs = list((vault / "ideas").glob("use-laplacian-smoothing-for-solver-handoff*.md"))
+    packet = json.loads(packets[0].read_text(encoding="utf-8"))
+    assert result == 0
+    assert packet["idea"] == "Use Laplacian smoothing for solver handoff."
+    assert packet["requested_entries"] == ["concepts/laplace.md", "Sparse Solver"]
+    assert {item["path"] for item in packet["explicit_context"]} == {"concepts/laplace.md", "references/solver.md"}
+    assert len(outputs) == 1
+    assert len(code_calls) == 2
+    assert code_calls[0][1] == "--wait"
+    assert code_calls[1] == ["/usr/local/bin/code", str(outputs[0])]
+    assert "Status:** completed" in capsys.readouterr().out
+
+
 def test_ideas_not_in_canonical_wiki_dirs() -> None:
     assert "ideas" not in ingest.WIKI_PAGE_DIRS
     assert "ideas" not in query.WIKI_PAGE_DIRS
     assert "ideas" not in lint.CONTENT_DIRS
     assert "ideas" not in cli.WIKI_PAGE_DIRS
+    assert "skills" not in ingest.WIKI_PAGE_DIRS
+    assert "skills" not in query.WIKI_PAGE_DIRS
+    assert "skills" not in lint.CONTENT_DIRS
+    assert "skills" not in cli.WIKI_PAGE_DIRS
+    assert "journal" not in ingest.WIKI_PAGE_DIRS
+    assert "journal" not in query.WIKI_PAGE_DIRS
+    assert "journal" not in lint.CONTENT_DIRS
+    assert "journal" not in cli.WIKI_PAGE_DIRS

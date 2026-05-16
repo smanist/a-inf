@@ -18,7 +18,7 @@ from a_inf.managed_files import A_INF_TAG, ensure_managed_tag, managed_tags
 from a_inf.runs import timestamped_run_dir
 
 
-CONTENT_DIRS = ["concepts", "entities", "skills", "references", "synthesis", "journal", "projects", "misc"]
+CONTENT_DIRS = ["concepts", "entities", "references", "synthesis", "projects", "misc"]
 REQUIRED_FRONTMATTER = {"title", "category", "tags", "sources", "created", "updated"}
 VALID_LIFECYCLES = {"draft", "reviewed", "verified", "disputed", "archived"}
 SEMANTIC_REVIEW_KEYS = {"status", "scope", "findings", "repair_recommendations", "reviewed_candidate_ids", "warnings"}

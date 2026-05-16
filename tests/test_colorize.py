@@ -67,12 +67,12 @@ def test_by_category_uses_fixed_folder_order_for_existing_markdown(tmp_path: Pat
     vault = init_vault(tmp_path)
     write_page(vault, "references/ref.md", ["api"])
     write_page(vault, "concepts/concept.md", ["idea"])
-    write_page(vault, "journal/day.md", ["daily"])
+    write_page(vault, "entities/tool.md", ["tool"])
 
     groups = colorize.category_groups(vault, colorize.BUILTIN_PALETTE)
 
-    assert [group["query"] for group in groups] == ['path:"concepts"', 'path:"references"', 'path:"journal"']
-    assert [group["color"]["rgb"] for group in groups] == [rgb("#4E79A7"), rgb("#76B7B2"), rgb("#B07AA1")]
+    assert [group["query"] for group in groups] == ['path:"concepts"', 'path:"entities"', 'path:"references"']
+    assert [group["color"]["rgb"] for group in groups] == [rgb("#4E79A7"), rgb("#F28E2B"), rgb("#76B7B2")]
 
 
 def test_visibility_and_combined_ordering(tmp_path: Path) -> None:

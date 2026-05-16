@@ -47,10 +47,9 @@ Organize pages into these default categories (customizable in `.env`):
 |---|---|---|
 | `concepts/` | Ideas, theories, mental models | `concepts/transformer-architecture.md` |
 | `entities/` | People, orgs, tools, projects | `entities/andrej-karpathy.md` |
-| `skills/` | How-to knowledge, procedures | `skills/fine-tuning-llms.md` |
 | `references/` | Summaries of specific sources | `references/attention-is-all-you-need.md` |
 | `synthesis/` | Cross-cutting analysis across sources | `synthesis/scaling-laws-debate.md` |
-| `journal/` | Timestamped observations, session logs | `journal/2024-03-15.md` |
+| `projects/` | Project-specific knowledge and overview pages | `projects/my-project/my-project.md` |
 
 ### Projects
 
@@ -62,7 +61,7 @@ $OBSIDIAN_VAULT_PATH/
 │   ├── my-project/
 │   │   ├── my-project.md      ← project overview (named after project)
 │   │   ├── concepts/          ← project-scoped category pages
-│   │   ├── skills/
+│   │   ├── references/
 │   │   └── ...
 │   ├── another-project/
 │   │   └── ...
@@ -70,13 +69,13 @@ $OBSIDIAN_VAULT_PATH/
 │       └── ...
 ├── concepts/                   ← global (cross-project) knowledge
 ├── entities/
-├── skills/
+├── references/
 └── ...
 ```
 
 **When knowledge is project-specific** (a debugging technique that only applies to one codebase, a project-specific architecture decision), put it under `projects/<project-name>/<category>/`.
 
-**When knowledge is general** (a concept like "React Server Components", a person like "Andrej Karpathy", a widely applicable skill), put it in the global category directory.
+**When knowledge is general** (a concept like "React Server Components", a person like "Andrej Karpathy", or a reusable procedure), put it in the global category directory.
 
 **Cross-referencing:** Project pages should `[[wikilink]]` to global pages and vice versa. A project's overview page should link to the key concept, skill, and entity pages relevant to that project — whether they live under the project or globally.
 
