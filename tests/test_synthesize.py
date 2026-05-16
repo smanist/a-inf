@@ -81,6 +81,8 @@ def synth_args(**overrides: object) -> SimpleNamespace:
         "dry_run": False,
         "json": False,
         "no_log": True,
+        "vscode": False,
+        "vscode_bin": "code",
         "codex_bin": "codex",
         "sandbox": "workspace-write",
         "add_dir": [],
@@ -322,6 +324,58 @@ def test_run_synthesize_dry_run_validates_without_editing(tmp_path: Path, monkey
     assert json.loads(capsys.readouterr().out)["status"] == "dry_run"
 
 
+def test_run_synthesize_vscode_opens_created_pages(tmp_path: Path, monkeypatch) -> None:
+    vault = make_vault(tmp_path)
+    add_raw_gap(vault)
+    opened: list[list[str]] = []
+
+    def fake_call(command: list[str], cwd: Path, env: dict[str, str] | None = None) -> int:
+        prompt = command[-1]
+        packet_path = Path(prompt.split("Deterministic packet path: ", 1)[1].splitlines()[0])
+        plan_path = Path(prompt.split("Write synthesis plan JSON to: ", 1)[1].splitlines()[0])
+        packet = json.loads(packet_path.read_text(encoding="utf-8"))
+        plan_path.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "status": "completed",
+                    "decisions": [
+                        {
+                            "candidate_id": packet["candidates"][0]["candidate_id"],
+                            "action": "create",
+                            "summary": "Created summary.",
+                            "body": "Created body.",
+                        }
+                    ],
+                    "warnings": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return 0
+
+    monkeypatch.setattr(synthesize.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(synthesize.subprocess, "call", fake_call)
+    monkeypatch.setattr(
+        synthesize.subprocess,
+        "run",
+        lambda command, **_kwargs: opened.append(command) or subprocess.CompletedProcess(command, 0),
+    )
+    monkeypatch.setattr(synthesize, "ensure_qmd_collection", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(synthesize, "sync_qmd", lambda *_args, **_kwargs: True)
+
+    result = synthesize.run_synthesize(
+        synth_args(no_codex=False, vscode=True),
+        vault,
+        {"OBSIDIAN_LINK_FORMAT": "wikilink"},
+    )
+
+    created = vault / "synthesis/alpha-x-beta.md"
+    assert result == 0
+    assert created.exists()
+    assert opened == [["/usr/local/bin/code", str(created)]]
+
+
 def test_cli_synthesize_dispatch_routes_to_engine(tmp_path: Path, monkeypatch) -> None:
     vault = make_vault(tmp_path)
     calls: list[Path] = []
@@ -342,10 +396,12 @@ def test_cli_synthesize_dispatch_routes_to_engine(tmp_path: Path, monkeypatch) -
 def test_cli_parser_accepts_synthesize_flags() -> None:
     parser = cli.build_parser()
 
-    args = parser.parse_args(["synthesize", "--dry-run", "--json", "--no-log", "alpha"])
+    args = parser.parse_args(["synthesize", "--dry-run", "--json", "--no-log", "--vscode", "--vscode-bin", "code-insiders", "alpha"])
 
     assert args.alias == "synthesize"
     assert args.dry_run is True
     assert args.json is True
     assert args.no_log is True
+    assert args.vscode is True
+    assert args.vscode_bin == "code-insiders"
     assert args.args == ["alpha"]

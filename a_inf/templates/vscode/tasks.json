@@ -1,0 +1,97 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Insights (a-inf)",
+      "type": "shell",
+      "command": "a-inf insights --vscode",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true,
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Synthesize (a-inf)",
+      "type": "shell",
+      "command": "a-inf synthesize --vscode",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true,
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Query (a-inf)",
+      "type": "shell",
+      "command": "a-inf query --mode vscode",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true,
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Ideate (a-inf)",
+      "type": "shell",
+      "command": "a-inf ideate --mode vscode",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true,
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Doctor (a-inf)",
+      "type": "shell",
+      "command": "a-inf doctor ${input:aInfMode}",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true,
+      },
+      "runOptions": {
+        "reevaluateOnRerun": true
+      },
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "aInfMode",
+      "type": "pickString",
+      "description": "Select doctor command",
+      "options": [
+        "--dry-run",
+        "--fix",
+        "--full",
+        "--apply-tags",
+        "--full --apply-tags"
+      ]
+    }
+  ]
+}

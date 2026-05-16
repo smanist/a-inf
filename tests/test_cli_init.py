@@ -77,6 +77,7 @@ def test_init_creates_vault_structure_and_local_skill_links(tmp_path: Path, monk
         "_runs",
         "_meta",
         ".obsidian",
+        ".vscode",
         ".agents",
         ".agents/skills",
     ]:
@@ -131,6 +132,21 @@ def test_init_creates_vault_structure_and_local_skill_links(tmp_path: Path, monk
     assert ".obsidian/workspace.json" in gitignore
     assert ".obsidian/plugins" in gitignore
     assert "graph.json.backup-*" in gitignore
+
+    settings_template = Path(cli.__file__).resolve().parent / "templates" / "vscode" / "settings.json"
+    tasks_template = Path(cli.__file__).resolve().parent / "templates" / "vscode" / "tasks.json"
+    settings = json.loads((vault / ".vscode" / "settings.json").read_text(encoding="utf-8"))
+    expected_settings = json.loads(settings_template.read_text(encoding="utf-8"))
+    expected_settings["workbench.colorCustomizations"] = {
+        "terminal.background": settings["workbench.colorCustomizations"]["terminal.background"]
+    }
+    assert settings == expected_settings
+    assert settings["workbench.colorCustomizations"]["terminal.background"] in cli.VSCODE_TERMINAL_BACKGROUND_COLORS
+    assert (vault / ".vscode" / "tasks.json").read_text(encoding="utf-8") == tasks_template.read_text(
+        encoding="utf-8"
+    )
+    assert ".vscode/settings.json" in tracked.stdout.splitlines()
+    assert ".vscode/tasks.json" in tracked.stdout.splitlines()
 
     manifest = json.loads((vault / ".manifest.json").read_text(encoding="utf-8"))
     assert manifest["version"] == 1
@@ -271,6 +287,31 @@ def test_init_does_not_overwrite_existing_graph_settings(tmp_path: Path, monkeyp
 
     graph = json.loads((vault / ".obsidian" / "graph.json").read_text(encoding="utf-8"))
     assert graph == {"search": "path:concepts"}
+
+
+def test_init_does_not_overwrite_existing_vscode_settings(tmp_path: Path, monkeypatch) -> None:
+    vault = tmp_path / "vault"
+    (vault / ".vscode").mkdir(parents=True)
+    (vault / ".vscode" / "settings.json").write_text('{"custom": true}\n', encoding="utf-8")
+    skills_source = Path(__file__).resolve().parents[1] / ".skills"
+    monkeypatch.setattr(cli, "ensure_qmd_collection", lambda *_args, **_kwargs: True)
+
+    assert cmd_init(Args(vault, skills_source)) == 0
+
+    assert (vault / ".vscode" / "settings.json").read_text(encoding="utf-8") == '{"custom": true}\n'
+    assert (vault / ".vscode" / "tasks.json").is_file()
+
+
+def test_init_uses_random_vscode_terminal_background(tmp_path: Path, monkeypatch) -> None:
+    vault = tmp_path / "vault"
+    skills_source = Path(__file__).resolve().parents[1] / ".skills"
+    monkeypatch.setattr(cli, "ensure_qmd_collection", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(cli.random, "choice", lambda colors: "#8B008B")
+
+    assert cmd_init(Args(vault, skills_source)) == 0
+
+    settings = json.loads((vault / ".vscode" / "settings.json").read_text(encoding="utf-8"))
+    assert settings["workbench.colorCustomizations"]["terminal.background"] == "#8B008B"
 
 
 def test_init_adds_managed_tag_to_existing_support_files(tmp_path: Path, monkeypatch) -> None:

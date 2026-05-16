@@ -15,3 +15,6 @@ a-inf = "a_inf.cli:main"
 
 [tool.setuptools]
 packages = ["a_inf"]
+
+[tool.setuptools.package-data]
+a_inf = ["templates/vscode/*.json"]

@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
+from a_inf import cli
 from a_inf import insights
 
 
@@ -76,6 +77,8 @@ def insight_args(**overrides: object) -> SimpleNamespace:
         "no_codex": True,
         "print_prompt": False,
         "no_log": False,
+        "vscode": False,
+        "vscode_bin": "code",
         "codex_bin": "codex",
         "sandbox": "workspace-write",
         "add_dir": [],
@@ -88,6 +91,17 @@ def only_insights_output(vault: Path) -> Path:
     outputs = sorted((vault / "_runs").glob("insights-*/_insights.md"))
     assert len(outputs) == 1
     return outputs[0]
+
+
+def test_cli_parser_accepts_insights_vscode_flags() -> None:
+    parser = cli.build_parser()
+
+    args = parser.parse_args(["insights", "--vscode", "--vscode-bin", "code-insiders", "--json"])
+
+    assert args.alias == "insights"
+    assert args.vscode is True
+    assert args.vscode_bin == "code-insiders"
+    assert args.json is True
 
 
 def test_build_insights_packet_computes_deterministic_graph_sections(tmp_path: Path) -> None:
@@ -155,6 +169,26 @@ def test_run_insights_no_codex_writes_markdown_log_and_syncs_qmd(tmp_path: Path,
     report = capsys.readouterr().out
     assert "**Status:** completed" in report
     assert f"**Output:** {output_path.relative_to(vault).as_posix()}" in report
+
+
+def test_run_insights_vscode_opens_generated_markdown(tmp_path: Path, monkeypatch) -> None:
+    vault = make_vault(tmp_path)
+    add_insight_graph(vault)
+    opened: list[list[str]] = []
+    monkeypatch.setattr(insights, "ensure_qmd_collection", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(insights, "sync_qmd", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(insights.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(
+        insights.subprocess,
+        "run",
+        lambda command, **_kwargs: opened.append(command) or subprocess.CompletedProcess(command, 0),
+    )
+
+    result = insights.run_insights(insight_args(no_codex=True, vscode=True), vault, {})
+
+    output_path = only_insights_output(vault)
+    assert result == 0
+    assert opened == [["/usr/local/bin/code", str(output_path)]]
 
 
 def test_default_insights_invokes_codex_and_merges_valid_explanations(tmp_path: Path, monkeypatch) -> None:

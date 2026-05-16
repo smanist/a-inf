@@ -26,9 +26,9 @@ a-inf insights
 a-inf query "what do I know about rate limiting?"
 ```
 
-`a-inf init` is local and deterministic. It creates the vault folders, seed files, `.a-inf/config.toml`, a compatibility `.env`, Obsidian config, `.gitignore` entries for local config, and local Codex skill symlinks under `.agents/skills/`. New `.env` files default `QMD_WIKI_COLLECTION` and `QMD_PAPERS_COLLECTION` to the repo directory name, and init creates the matching QMD collection.
+`a-inf init` is local and deterministic. It creates the vault folders, seed files, `.a-inf/config.toml`, a compatibility `.env`, Obsidian config, VS Code workspace config, `.gitignore` entries for local config, and local Codex skill symlinks under `.agents/skills/`. New `.env` files default `QMD_WIKI_COLLECTION` and `QMD_PAPERS_COLLECTION` to the repo directory name, and init creates the matching QMD collection.
 
-`a-inf ingest` now runs a hybrid deterministic engine: Python selects sources, extracts URL content with `defuddle`, optionally extracts PDF markdown with MinerU, computes hashes, asks Codex for a JSON ingest plan, validates the whole plan, and only then writes wiki files. For non-English sources, extraction and `_sources/` archives preserve the original language, while Codex translates durable knowledge into English inside the semantic ingest plan so page titles, summaries, tags, links, body prose, and later embeddings are English from the first write. `a-inf query` also starts deterministically: Python builds a QMD-backed retrieval packet, then asks Codex only to synthesize the final cited answer. `a-inf lint` follows the same hybrid pattern: Python builds a deterministic health packet, then Codex can append semantic review findings for contradictions and synthesis gaps. `a-inf insights` computes graph facts deterministically and uses Codex only for optional explanation text. `a-inf fixlink` uses lint's deterministic graph packet to ask Codex for bounded link decisions, then Python validates and applies the edits. `a-inf dashboard` deterministically renders current Obsidian Bases YAML for built-in recipes and uses Codex only to produce a bounded JSON spec for ambiguous dashboard requests. After successful write workflows, the CLI refreshes QMD with `qmd update` and `qmd embed`. Other synthesis-heavy commands still dispatch to Codex with the matching skill. Use `--print-prompt` to inspect the generated ingest packet, query packet, lint semantic-review prompt, insights explanation prompt, fixlink packet, dashboard spec prompt, or dispatch prompt instead:
+`a-inf ingest` now runs a hybrid deterministic engine: Python selects sources, extracts URL content with `defuddle`, optionally extracts PDF markdown with MinerU, computes hashes, asks Codex for a JSON ingest plan, validates the whole plan, and only then writes wiki files. For non-English sources, extraction and `_sources/` archives preserve the original language, while Codex translates durable knowledge into English inside the semantic ingest plan so page titles, summaries, tags, links, body prose, and later embeddings are English from the first write. `a-inf query` also starts deterministically: Python builds a QMD-backed retrieval packet, then asks Codex only to synthesize the final cited answer. `a-inf lint` follows the same hybrid pattern: Python builds a deterministic health packet, then Codex can append semantic review findings for contradictions and synthesis gaps. `a-inf insights` computes graph facts deterministically and uses Codex only for optional explanation text. `a-inf fixlink` uses lint's deterministic graph packet to ask Codex for bounded link decisions, then Python validates and applies the edits. `a-inf doctor` bundles lint, broken-link cleanup, optional semantic fixlink, and tag audit/application into one saved run report. `a-inf dashboard` deterministically renders current Obsidian Bases YAML for built-in recipes and uses Codex only to produce a bounded JSON spec for ambiguous dashboard requests. After successful write workflows, the CLI refreshes QMD with `qmd update` and `qmd embed`. Other synthesis-heavy commands still dispatch to Codex with the matching skill. Use `--print-prompt` to inspect the generated ingest packet, query packet, lint semantic-review prompt, insights explanation prompt, fixlink packet, dashboard spec prompt, or dispatch prompt instead:
 
 ```bash
 a-inf ingest paper-xx --print-prompt
@@ -54,6 +54,9 @@ repo/
 ├── _sources/                # local-only archived originals and extracted detail text
 ├── _runs/                   # local-only run packets, plans, reports, and saved query/lint outputs
 ├── .obsidian/
+├── .vscode/
+│   ├── settings.json
+│   └── tasks.json
 ├── .agents/
 │   └── skills/              # symlinks to bundled workflow skills
 ├── concepts/
@@ -80,14 +83,17 @@ If `AGENTS.md` already exists, `a-inf init` appends a small marked `a-inf` secti
 | `a-inf query --no-save <question>` | Print the answer without saving a Markdown file |
 | `a-inf status` | Show ingest state and deltas locally |
 | `a-inf insights` | Analyze hubs, bridges, and graph structure |
+| `a-inf insights --vscode` | Analyze graph structure, then open the generated insights Markdown in VS Code |
 | `a-inf update` | Sync current project knowledge into the vault |
 | `a-inf history` | Mine local Codex history from `~/.codex` |
 | `a-inf lint` | Audit links, metadata, stale pages, and orphans, and save Markdown findings inside its `_runs/lint-*` run folder with the `a-inf` tag |
+| `a-inf doctor` | Run pre/post lint, deterministic broken-link cleanup, tag audit, and a consolidated `_runs/doctor-*` report |
 | `a-inf rebuild` | Archive, rebuild, or restore |
 | `a-inf export` | Export the graph |
 | `a-inf research <topic>` | Research and file a topic |
 | `a-inf capture` | Capture the current conversation |
 | `a-inf synthesize` | Find synthesis gaps |
+| `a-inf synthesize --vscode` | Find synthesis gaps, then open created synthesis pages or the run report in VS Code |
 | `a-inf dashboard` | Create Obsidian Bases dashboards |
 | `a-inf colorize` | Configure graph colors |
 | `a-inf fixlink` | Add missing wikilinks |
@@ -121,6 +127,8 @@ Commands that can be fully deterministic should move into Python over time. `a-i
 `a-inf lint --json` prints the full health packet, including deterministic findings and semantic candidates. Plain `a-inf lint` renders human Markdown, saves the report to `_runs/lint-<timestamp>/lint-findings.md` with the `a-inf` tag, and hides raw semantic candidates unless Codex promotes them. Use `a-inf lint --no-save` to skip the saved report, `--output _runs/custom-lint.md` to choose the saved path, `--no-codex` for deterministic-only output, `--semantic-scope broad` to allow wider semantic review, and `--no-log` to avoid appending the default `LINT` entry to `log.md`.
 
 `a-inf fixlink --remove-broken` is fully deterministic and does not invoke Codex. It recomputes the current page registry, replaces unresolved wikilinks with their visible plain text, skips fenced code blocks and frontmatter, and revalidates each exact line span before writing. Use `--dry-run` to inspect the removal report without editing files.
+
+`a-inf doctor` runs a conservative maintenance bundle: preflight, deterministic lint, `fixlink --remove-broken`, deterministic tag audit, and a final lint, then saves `_runs/doctor-<timestamp>/doctor-report.md`. Use `--dry-run` to avoid page edits, `--fix` to include semantic missing-link repair, `--full` to also request a Codex tag plan, `--apply-tags` to apply a reviewed tag plan, `--json` for the full packet, and `--no-codex` for deterministic-only operation.
 
 ## Configuration
 

@@ -87,6 +87,7 @@ def run_synthesize(args: Any, vault: Path, config: dict[str, str] | None = None)
         report = build_report(packet, status="not_run", warnings=["synthesis planning skipped by --no-codex"])
         write_json(run.report_path, report)
         print_report(report, json_output=getattr(args, "json", False))
+        open_synthesize_output_if_requested(args, vault, run, report)
         return 0
 
     codex_bin = shutil.which(getattr(args, "codex_bin", "codex"))
@@ -137,12 +138,34 @@ def run_synthesize(args: Any, vault: Path, config: dict[str, str] | None = None)
             )
         write_json(run.report_path, report)
         print_report(report, json_output=getattr(args, "json", False))
+        open_synthesize_output_if_requested(args, vault, run, report)
         return 0
     except SynthesizeError as exc:
         report = build_report(packet, status="invalid", warnings=[str(exc)])
         write_json(run.report_path, report)
         print_report(report, json_output=getattr(args, "json", False))
+        open_synthesize_output_if_requested(args, vault, run, report)
         return 1
+
+
+def open_synthesize_output_if_requested(args: Any, vault: Path, run: Run, report: dict[str, Any]) -> None:
+    if not getattr(args, "vscode", False):
+        return
+    created = [vault / str(path) for path in report.get("pages_created", []) if str(path)]
+    paths = [path for path in created if path.exists()] or [run.report_path]
+    open_paths_in_vscode(getattr(args, "vscode_bin", "code"), paths)
+
+
+def open_paths_in_vscode(vscode_bin: str, paths: list[Path]) -> None:
+    binary = shutil.which(vscode_bin)
+    if binary is None:
+        joined = ", ".join(str(path) for path in paths)
+        print(f"warning: VS Code executable not found, could not open {joined}", file=sys.stderr)
+        return
+    result = subprocess.run([binary, *[str(path) for path in paths]])
+    if result.returncode != 0:
+        joined = ", ".join(str(path) for path in paths)
+        print(f"warning: VS Code exited with status {result.returncode} while opening {joined}", file=sys.stderr)
 
 
 def load_candidate_context(vault: Path, config: dict[str, str]) -> tuple[dict[str, Any], dict[str, Any], str]:

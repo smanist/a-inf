@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +43,7 @@ def run_insights(args: Any, vault: Path, config: dict[str, str] | None = None) -
         report = build_report(packet, status="skipped", warnings=[warning])
         write_json(run.report_path, report)
         print_report(report, json_output=getattr(args, "json", False))
+        open_insights_output_if_requested(args, run)
         return 0
 
     if getattr(args, "print_prompt", False):
@@ -77,7 +79,25 @@ def run_insights(args: Any, vault: Path, config: dict[str, str] | None = None) -
     )
     write_json(run.report_path, report)
     print_report(report, json_output=getattr(args, "json", False))
+    open_insights_output_if_requested(args, run)
     return 0
+
+
+def open_insights_output_if_requested(args: Any, run: Run) -> None:
+    if not getattr(args, "vscode", False):
+        return
+    path = run.output_path if run.output_path.exists() else run.report_path
+    open_path_in_vscode(getattr(args, "vscode_bin", "code"), path)
+
+
+def open_path_in_vscode(vscode_bin: str, path: Path) -> None:
+    binary = shutil.which(vscode_bin)
+    if binary is None:
+        print(f"warning: VS Code executable not found, could not open {path}", file=sys.stderr)
+        return
+    result = subprocess.run([binary, str(path)])
+    if result.returncode != 0:
+        print(f"warning: VS Code exited with status {result.returncode} while opening {path}", file=sys.stderr)
 
 
 def build_insights_packet(vault: Path, config: dict[str, str], explanations_path: Path | None = None) -> dict[str, Any]:

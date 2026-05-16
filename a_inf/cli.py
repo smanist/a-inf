@@ -5,6 +5,7 @@ from collections.abc import Callable
 import hashlib
 import json
 import os
+import random
 import shutil
 import subprocess
 import sys
@@ -20,6 +21,16 @@ from a_inf.qmd import ensure_qmd_collection, ensure_qmd_state_dirs, qmd_env, qmd
 
 
 LOCAL_SKILLS_DIR = Path(".agents") / "skills"
+VSCODE_TEMPLATE_DIR = Path(__file__).resolve().parent / "templates" / "vscode"
+VSCODE_TERMINAL_BACKGROUND_COLORS = [
+    "#4B004B",
+    "#5A005A",
+    "#660066",
+    "#720072",
+    "#7B007B",
+    "#800080",
+    "#8B008B",
+]
 
 VAULT_DIRS = [
     "concepts",
@@ -34,6 +45,7 @@ VAULT_DIRS = [
     "_runs",
     "_meta",
     ".obsidian",
+    ".vscode",
     str(LOCAL_SKILLS_DIR),
 ]
 
@@ -54,6 +66,7 @@ SKILL_ALIASES = {
     "history": "codex-history-ingest",
     "insights": "wiki-insights",
     "lint": "wiki-lint",
+    "doctor": "wiki-doctor",
     "rebuild": "wiki-rebuild",
     "export": "wiki-export",
     "research": "wiki-research",
@@ -67,13 +80,14 @@ SKILL_ALIASES = {
 }
 
 COMMAND_HELP = {
-    "init": "Initialize a vault; writes scaffold files, config, Obsidian settings, skill links, and an initial commit.",
+    "init": "Initialize a vault; writes scaffold files, config, Obsidian/VS Code settings, skill links, and an initial commit.",
     "info": "Show configuration; prints vault paths, source roots, skill roots, and QMD settings.",
     "status": "Show ingest state; prints page counts, source deltas, manifest state, and next-action guidance.",
     "ingest": "Import sources; writes wiki pages, source archives, manifest/index/log/hot updates, and QMD state.",
     "query": "Answer from the compiled wiki; prints a cited answer and saves it under _runs/query-* by default.",
     "insights": "Analyze wiki graph structure; writes _runs/insights-* output and prints hubs, bridges, and orphans.",
     "lint": "Audit wiki health; prints or saves link, metadata, stale-page, orphan, and semantic findings.",
+    "doctor": "Run bundled wiki health checks and safe cleanup phases, then save a consolidated report.",
     "fixlink": "Add or remove wikilinks; edits pages when changes apply and prints a validation report.",
     "synthesize": "Find synthesis gaps; writes run packets/reports and any accepted synthesis pages.",
     "dashboard": "Create Obsidian Bases dashboards; writes _meta/*.base and prints the dashboard report.",
@@ -98,6 +112,7 @@ COMMAND_GROUPS = [
             "query",
             "insights",
             "lint",
+            "doctor",
             "fixlink",
             "synthesize",
             "dashboard",
@@ -136,6 +151,8 @@ INIT_COMMIT_PATHS = [
     ".obsidian/appearance.json",
     ".obsidian/community-plugins.json",
     ".obsidian/graph.json",
+    ".vscode/settings.json",
+    ".vscode/tasks.json",
     str(LOCAL_SKILLS_DIR),
     "AGENTS.md",
     ".gitignore",
@@ -265,6 +282,7 @@ def build_parser() -> argparse.ArgumentParser:
         "history",
         "insights",
         "lint",
+        "doctor",
         "rebuild",
         "export",
         "research",
@@ -333,6 +351,43 @@ def build_parser() -> argparse.ArgumentParser:
                 default=None,
                 help="Vault-relative Markdown path for saved output. Defaults to _runs/lint-<timestamp>/lint-findings.md.",
             )
+        if name == "doctor":
+            cmd.add_argument(
+                "--json",
+                action="store_true",
+                help="Print the consolidated doctor packet as JSON instead of Markdown.",
+            )
+            cmd.add_argument(
+                "--dry-run",
+                action="store_true",
+                help="Run doctor phases without applying page edits.",
+            )
+            cmd.add_argument(
+                "--fix",
+                action="store_true",
+                help="Include semantic fixlink repair in addition to deterministic broken-link cleanup.",
+            )
+            cmd.add_argument(
+                "--full",
+                action="store_true",
+                help="Run the fuller doctor flow: semantic fixlink plus Codex tag planning unless --no-codex is set.",
+            )
+            cmd.add_argument(
+                "--apply-tags",
+                action="store_true",
+                help="Apply the generated or latest validated tag plan. Intended for reviewed plans.",
+            )
+            cmd.add_argument(
+                "--semantic-scope",
+                choices=["one-hop", "broad"],
+                default="one-hop",
+                help="Semantic review scope forwarded to child workflows. Default: one-hop.",
+            )
+            cmd.add_argument(
+                "--no-log",
+                action="store_true",
+                help="Do not append DOCTOR to log.md or forward logging to child write phases.",
+            )
         if name == "fixlink":
             cmd.add_argument(
                 "--json",
@@ -400,6 +455,16 @@ def build_parser() -> argparse.ArgumentParser:
             )
         if name == "synthesize":
             cmd.add_argument(
+                "--vscode",
+                action="store_true",
+                help="Open generated synthesize output in VS Code after the workflow completes.",
+            )
+            cmd.add_argument(
+                "--vscode-bin",
+                default="code",
+                help="VS Code executable to use for --vscode. Default: code.",
+            )
+            cmd.add_argument(
                 "--json",
                 action="store_true",
                 help="Print the final synthesize report as JSON instead of Markdown.",
@@ -456,6 +521,16 @@ def build_parser() -> argparse.ArgumentParser:
                 help="Do not append WIKI_DASHBOARD to log.md.",
             )
         if name == "insights":
+            cmd.add_argument(
+                "--vscode",
+                action="store_true",
+                help="Open generated insights output in VS Code after the workflow completes.",
+            )
+            cmd.add_argument(
+                "--vscode-bin",
+                default="code",
+                help="VS Code executable to use for --vscode. Default: code.",
+            )
             cmd.add_argument(
                 "--json",
                 action="store_true",
@@ -608,6 +683,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     write_json_if_missing(vault / ".obsidian" / "appearance.json", {"baseFontSize": 16})
     write_json_if_missing(vault / ".obsidian" / "community-plugins.json", ["obsidian-git", "lean-terminal"])
     write_json_if_missing(vault / ".obsidian" / "graph.json", graph_template())
+    install_vscode_templates(vault)
     write_local_config(vault, skills_source)
     write_file_if_missing(vault / ".env", env_template(vault))
 
@@ -668,6 +744,20 @@ def initialize_git_repo(vault: Path) -> int:
 def ensure_gitkeep_files(vault: Path) -> None:
     for dirname in TRACKED_SCAFFOLD_DIRS:
         write_file_if_missing(vault / dirname / ".gitkeep", "")
+
+
+def install_vscode_templates(vault: Path) -> None:
+    settings_path = vault / ".vscode" / "settings.json"
+    if write_bytes_if_missing(settings_path, (VSCODE_TEMPLATE_DIR / "settings.json").read_bytes()):
+        add_random_vscode_terminal_background(settings_path)
+    write_bytes_if_missing(vault / ".vscode" / "tasks.json", (VSCODE_TEMPLATE_DIR / "tasks.json").read_bytes())
+
+
+def add_random_vscode_terminal_background(settings_path: Path) -> None:
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    color_customizations = settings.setdefault("workbench.colorCustomizations", {})
+    color_customizations["terminal.background"] = random.choice(VSCODE_TERMINAL_BACKGROUND_COLORS)
+    settings_path.write_text(json.dumps(settings, indent=4) + "\n", encoding="utf-8")
 
 
 def commit_vault_scaffold(vault: Path) -> int:
@@ -778,6 +868,11 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
 
         vault = find_vault_root(Path.cwd())
         return run_lint(args, vault, load_wiki_config(vault))
+    elif alias == "doctor":
+        from a_inf.doctor import run_doctor
+
+        vault = find_vault_root(Path.cwd())
+        return run_doctor(args, vault, load_wiki_config(vault))
     elif alias == "fixlink":
         from a_inf.fixlink import run_fixlink
 
@@ -1484,6 +1579,14 @@ def find_vault_root(start: Path) -> Path:
 def write_file_if_missing(path: Path, content: str) -> None:
     if not path.exists():
         path.write_text(content, encoding="utf-8")
+
+
+def write_bytes_if_missing(path: Path, content: bytes) -> bool:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists():
+        path.write_bytes(content)
+        return True
+    return False
 
 
 def write_json_if_missing(path: Path, data: object) -> None:

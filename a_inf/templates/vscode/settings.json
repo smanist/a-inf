@@ -1,0 +1,26 @@
+{
+    "markdown.extension.preview.autoShowPreviewToSide": true,
+    "foam.files.exclude": [
+        "_meta/**",
+        "_runs/**",
+        "_sources/**",
+        ".agents/**",
+        ".obsidian/**",
+        "AGENTS.md",
+        "hot.md",
+        "index.md",
+        "log.md"
+    ],
+    "foam.graph.views": [
+        {
+            "name": "Default",
+            "colorBy": "directory",
+            "show": {
+                "tag": { "enabled": false },
+                "placeholder": { "enabled": false }
+            },
+            "background": "#B7CDE8",
+            "lineColor": "#042D4B"
+        }
+    ]
+}
