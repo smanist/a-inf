@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 import hashlib
 import json
 import os
@@ -10,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from html.parser import HTMLParser
@@ -124,6 +126,17 @@ class IngestRun:
     run_dir: Path
     plan_path: Path
 
+    @property
+    def log_path(self) -> Path:
+        return self.run_dir / "ingest.log"
+
+
+@dataclass(frozen=True)
+class IngestCommitResult:
+    failed: bool
+    warnings: list[str]
+    notice: str | None = None
+
 
 @dataclass(frozen=True)
 class ValidatedPlan:
@@ -138,11 +151,27 @@ class IngestError(Exception):
 
 
 def run_hybrid_ingest(args: Any, vault: Path) -> int:
+    if getattr(args, "print_prompt", False) or getattr(args, "no_codex", False):
+        return run_hybrid_ingest_inner(args, vault, run=None)
+
+    run = make_run(vault)
+    run.run_dir.mkdir(parents=True, exist_ok=True)
+    with run.log_path.open("a", encoding="utf-8") as log:
+        with redirect_process_output(log):
+            print(f"a-inf ingest run: {run.run_id}")
+            print(f"vault: {vault}")
+            print(f"log: {run.log_path}")
+            return run_hybrid_ingest_inner(args, vault, run=run)
+
+
+def run_hybrid_ingest_inner(args: Any, vault: Path, run: IngestRun | None) -> int:
     runs: list[IngestRun] = []
     try:
         mode = resolve_mode(args)
         strategy = resolve_strategy(args)
         config = load_wiki_config(vault)
+        commit_requested, commit_explicit = resolve_commit_request(args, config)
+        pre_status = git_status(vault) if commit_requested else None
         manifest, _ = read_manifest(vault)
         sources = select_sources(vault, config, manifest, list(getattr(args, "args", [])), mode)
         qmd = resolve_qmd(config, vault)
@@ -183,23 +212,45 @@ def run_hybrid_ingest(args: Any, vault: Path) -> int:
         created = 0
         updated = 0
         warnings: list[str] = []
+        commit_paths: list[str] = []
+        commit_sources: list[str] = []
         for group in groups:
             manifest, _ = read_manifest(vault)
-            result, group_created, group_updated, group_warnings, run = run_ingest_group(
-                vault, config, manifest, group, mode, qmd, command
-            )
-            runs.append(run)
+            group_run = run or make_run(vault)
+            (
+                result,
+                group_created,
+                group_updated,
+                group_warnings,
+                completed_run,
+                group_commit_paths,
+                group_commit_sources,
+            ) = run_ingest_group(vault, config, manifest, group, mode, qmd, command, group_run)
+            runs.append(completed_run)
             if result != 0:
                 return result
             created += group_created
             updated += group_updated
             warnings.extend(group_warnings)
+            commit_paths.extend(group_commit_paths)
+            commit_sources.extend(group_commit_sources)
 
         if not sync_qmd(vault, config):
             warnings.append("QMD sync failed after ingest; wiki files were still applied.")
+        commit_failed = False
+        commit_notice: str | None = None
+        if commit_requested:
+            commit_result = commit_ingest_changes(vault, commit_paths, commit_sources, pre_status)
+            warnings.extend(commit_result.warnings)
+            commit_failed = commit_result.failed
+            commit_notice = commit_result.notice
         prune_runs(vault)
         for warning in warnings:
             print(f"warning: {warning}", file=sys.stderr)
+        if commit_notice:
+            print(commit_notice)
+        if commit_failed and commit_explicit:
+            return 1
         print(f"Ingest applied: {created} created, {updated} updated.")
         return 0
     except IngestError as exc:
@@ -218,8 +269,9 @@ def run_ingest_group(
     mode: str,
     qmd: QmdInfo | None,
     command: list[str],
-) -> tuple[int, int, int, list[str], IngestRun]:
-    run = make_run(vault)
+    run: IngestRun | None = None,
+) -> tuple[int, int, int, list[str], IngestRun, list[str], list[str]]:
+    run = run or make_run(vault)
     prompt = build_codex_prompt(vault, config, manifest, sources, run, mode, qmd)
     validate_codex_prompt_size(prompt, sources)
     run.run_dir.mkdir(parents=True, exist_ok=True)
@@ -227,20 +279,40 @@ def run_ingest_group(
 
     result = call_codex_exec(command, prompt, cwd=vault, env=qmd_env(os.environ, vault))
     if result != 0:
-        return result, 0, 0, [], run
+        return result, 0, 0, [], run, [], []
 
     plan = read_plan(run.plan_path)
     validated = validate_plan(plan, vault, config, manifest, sources, mode)
     warnings = apply_plan(validated, vault, config, manifest, sources, mode)
     created = sum(1 for page in validated.pages if page["action"] == "create")
     updated = sum(1 for page in validated.pages if page["action"] == "update")
-    return 0, created, updated, warnings, run
+    return 0, created, updated, warnings, run, durable_commit_paths(validated), durable_commit_sources(validated)
 
 
 def call_codex_exec(command: list[str], prompt: str, cwd: Path, env: dict[str, str]) -> int:
     """Run `codex exec` with the prompt on stdin to avoid argv size limits."""
     result = subprocess.run([*command, "-"], cwd=cwd, env=env, input=prompt, text=True, check=False)
     return result.returncode
+
+
+@contextmanager
+def redirect_process_output(log: Any) -> Iterator[None]:
+    stdout_fd = os.dup(1)
+    stderr_fd = os.dup(2)
+    try:
+        log.flush()
+        os.dup2(log.fileno(), 1)
+        os.dup2(log.fileno(), 2)
+        with redirect_stdout(log), redirect_stderr(log):
+            yield
+    finally:
+        sys.stdout.flush()
+        sys.stderr.flush()
+        log.flush()
+        os.dup2(stdout_fd, 1)
+        os.dup2(stderr_fd, 2)
+        os.close(stdout_fd)
+        os.close(stderr_fd)
 
 
 def validate_codex_prompt_size(prompt: str, sources: list[IngestSource]) -> None:
@@ -284,6 +356,24 @@ def resolve_strategy(args: Any) -> str:
     if batch and once:
         raise IngestError("--batch and --once cannot be combined")
     return "batch" if batch else "once"
+
+
+def resolve_commit_request(args: Any, config: dict[str, str]) -> tuple[bool, bool]:
+    commit = bool(getattr(args, "commit", False))
+    no_commit = bool(getattr(args, "no_commit", False))
+    if commit and no_commit:
+        raise IngestError("--commit and --no-commit cannot be combined")
+    if no_commit:
+        return False, False
+    if commit:
+        return True, True
+    return ingest_auto_commit_enabled(config), False
+
+
+def ingest_auto_commit_enabled(config: dict[str, str]) -> bool:
+    if "auto_commit_ingest" in config:
+        return bool_from_config(config["auto_commit_ingest"], default=False)
+    return bool_from_config(config_value(config, "A_INF_AUTO_COMMIT_INGEST", "false"), default=False)
 
 
 def source_groups(sources: list[IngestSource], strategy: str) -> list[list[IngestSource]]:
@@ -354,6 +444,9 @@ def print_info(vault: Path, config: dict[str, str]) -> None:
             "qmd": {
                 "wiki_collection": config.get("QMD_WIKI_COLLECTION") or "",
                 "papers_collection": config.get("QMD_PAPERS_COLLECTION") or "",
+            },
+            "git": {
+                "auto_commit_ingest": ingest_auto_commit_enabled(config),
             },
             "query": {
                 "source_detail": config_value(config, "A_INF_QUERY_SOURCE_DETAIL", "auto"),
@@ -960,6 +1053,17 @@ def pdf_extract_for_source(path: Path, vault: Path, config: dict[str, str], cont
 
 def config_value(config: dict[str, str], key: str, default: str) -> str:
     return os.environ.get(key) or config.get(key) or default
+
+
+def bool_from_config(value: str | None, default: bool = False) -> bool:
+    if value is None:
+        return default
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off", ""}:
+        return False
+    return default
 
 
 def normalize_bool_text(value: str) -> str:
@@ -1901,6 +2005,149 @@ def raw_cleanup_paths(
             add(path)
 
     return cleanup
+
+
+def durable_commit_paths(plan: ValidatedPlan) -> list[str]:
+    paths = [str(page["path"]) for page in plan.pages]
+    paths.extend([".manifest.json", "index.md", "log.md", "hot.md"])
+    return sorted(set(paths))
+
+
+def durable_commit_sources(plan: ValidatedPlan) -> list[str]:
+    return [str(source["manifest_key"]) for source in plan.sources]
+
+
+def commit_ingest_changes(
+    vault: Path,
+    paths: list[str],
+    sources: list[str],
+    pre_status: dict[str, str] | None,
+) -> IngestCommitResult:
+    unique_paths = sorted(set(paths))
+    if not unique_paths:
+        return IngestCommitResult(False, [])
+    if pre_status is None:
+        return IngestCommitResult(True, ["Ingest auto-commit skipped: not a git repository or git status failed."])
+    staged_before = sorted(path for path, status in pre_status.items() if status and status[0] not in {" ", "?"})
+    if staged_before:
+        return IngestCommitResult(
+            True,
+            ["Ingest auto-commit skipped: pre-existing staged changes would be included by git commit."],
+        )
+    dirty_commit_paths = sorted(path for path in unique_paths if path in pre_status)
+    if dirty_commit_paths:
+        return IngestCommitResult(
+            True,
+            [
+                "Ingest auto-commit skipped: durable ingest paths were already dirty before this run: "
+                + ", ".join(dirty_commit_paths[:8])
+                + ("..." if len(dirty_commit_paths) > 8 else "")
+            ],
+        )
+
+    add = run_git(vault, ["add", "--", *unique_paths])
+    if add.returncode != 0:
+        return IngestCommitResult(True, [f"Ingest auto-commit failed during git add: {git_detail(add)}"])
+
+    diff = run_git(vault, ["diff", "--cached", "--quiet", "--", *unique_paths], ok_returncodes={0, 1})
+    if diff.returncode == 0:
+        return IngestCommitResult(False, ["Ingest auto-commit skipped: no durable wiki changes to commit."])
+    if diff.returncode != 1:
+        return IngestCommitResult(True, [f"Ingest auto-commit failed during git diff: {git_detail(diff)}"])
+
+    commit = run_git(
+        vault,
+        ["commit", "-m", ingest_commit_subject(sources), "-m", ingest_commit_body(sources)],
+        env=git_commit_env(vault),
+    )
+    if commit.returncode != 0:
+        return IngestCommitResult(True, [f"Ingest auto-commit failed during git commit: {git_detail(commit)}"])
+    return IngestCommitResult(False, [], f"Ingest auto-commit created: {ingest_commit_subject(sources)}")
+
+
+def git_status(vault: Path) -> dict[str, str] | None:
+    result = run_git(vault, ["status", "--porcelain=v1", "--untracked-files=all"], ok_returncodes={0})
+    if result.returncode != 0:
+        return None
+    status: dict[str, str] = {}
+    for line in result.stdout.splitlines():
+        if len(line) < 4:
+            continue
+        code = line[:2]
+        raw_path = line[3:]
+        if " -> " in raw_path:
+            for part in raw_path.split(" -> ", 1):
+                status[part] = code
+        else:
+            status[raw_path] = code
+    return status
+
+
+def run_git(
+    vault: Path,
+    args: list[str],
+    *,
+    env: dict[str, str] | None = None,
+    ok_returncodes: set[int] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    ok = ok_returncodes or {0}
+    try:
+        result = subprocess.run(["git", *args], cwd=vault, text=True, capture_output=True, check=False, env=env)
+    except FileNotFoundError:
+        return subprocess.CompletedProcess(["git", *args], 127, stdout="", stderr="git executable not found")
+    if result.returncode in ok:
+        return result
+    return result
+
+
+def git_detail(result: subprocess.CompletedProcess[str]) -> str:
+    return (result.stderr or result.stdout or f"exit code {result.returncode}").strip()
+
+
+def ingest_commit_subject(sources: list[str]) -> str:
+    if len(sources) == 1:
+        return f"Ingest: {short_source_label(sources[0])}"
+    return f"Ingest: {len(sources)} sources"
+
+
+def ingest_commit_body(sources: list[str]) -> str:
+    lines = ["Sources:"]
+    lines.extend(f"- {source}" for source in sources)
+    return "\n".join(lines)
+
+
+def short_source_label(source: str) -> str:
+    parsed = urlparse(source)
+    if parsed.scheme in {"http", "https"} and parsed.netloc:
+        label = parsed.netloc + parsed.path
+    else:
+        label = Path(source).name or source
+    label = re.sub(r"\s+", " ", label).strip() or "source"
+    return label[:60].rstrip()
+
+
+def git_commit_env(vault: Path) -> dict[str, str] | None:
+    configured_name = git_config_value(vault, "user.name")
+    configured_email = git_config_value(vault, "user.email")
+    if configured_name and configured_email:
+        return None
+
+    env = os.environ.copy()
+    name = env.get("GIT_AUTHOR_NAME") or env.get("GIT_COMMITTER_NAME") or configured_name or "a-inf"
+    email = env.get("GIT_AUTHOR_EMAIL") or env.get("GIT_COMMITTER_EMAIL") or configured_email or "a-inf@example.invalid"
+    env.setdefault("GIT_AUTHOR_NAME", name)
+    env.setdefault("GIT_AUTHOR_EMAIL", email)
+    env.setdefault("GIT_COMMITTER_NAME", name)
+    env.setdefault("GIT_COMMITTER_EMAIL", email)
+    return env
+
+
+def git_config_value(vault: Path, key: str) -> str | None:
+    result = run_git(vault, ["config", "--get", key], ok_returncodes={0, 1})
+    if result.returncode != 0:
+        return None
+    value = result.stdout.strip()
+    return value or None
 
 
 def create_source_archives(

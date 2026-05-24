@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import base64
+import sys
 from pathlib import Path
 
 from a_inf import cli, ingest
@@ -23,6 +25,8 @@ class IngestArgs:
     codex_bin = "codex"
     sandbox = "workspace-write"
     add_dir: list[str] = []
+    commit = False
+    no_commit = False
 
     def __init__(self, args: list[str]) -> None:
         self.args = args
@@ -36,6 +40,15 @@ def fake_qmd_run(command: list[str], **_kwargs: object) -> subprocess.CompletedP
     if command[1:] in (["update"], ["embed"]):
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
     raise AssertionError(f"unexpected qmd command: {command}")
+
+
+def fake_qmd_run_with_git(original_run: object) -> object:
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        if command and command[0] == "git":
+            return original_run(command, **kwargs)
+        return fake_qmd_run(command, **kwargs)
+
+    return fake_run
 
 
 def plan_path_from_prompt(prompt: str) -> Path:
@@ -69,6 +82,27 @@ def test_call_codex_exec_passes_prompt_on_stdin(tmp_path: Path, monkeypatch) -> 
     assert seen["kwargs"] == {"cwd": tmp_path, "env": {"A": "B"}, "input": "large prompt", "text": True, "check": False}
 
 
+def test_redirect_process_output_captures_child_process_output(tmp_path: Path) -> None:
+    log_path = tmp_path / "ingest.log"
+
+    with log_path.open("a", encoding="utf-8") as log:
+        with ingest.redirect_process_output(log):
+            print("cli output")
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    "import sys; print('child stdout'); print('child stderr', file=sys.stderr)",
+                ],
+                check=True,
+            )
+
+    text = log_path.read_text(encoding="utf-8")
+    assert "cli output" in text
+    assert "child stdout" in text
+    assert "child stderr" in text
+
+
 def isolate_qmd_home(tmp_path: Path, monkeypatch) -> None:
     home = tmp_path / "qmd-home"
     monkeypatch.setattr(qmd_module.Path, "home", classmethod(lambda cls: home))
@@ -83,6 +117,32 @@ def make_vault(tmp_path: Path) -> Path:
     (vault / "log.md").write_text("---\ntitle: Wiki Log\n---\n\n# Wiki Log\n", encoding="utf-8")
     (vault / "hot.md").write_text("---\ntitle: Hot Cache\n---\n\n# Hot Cache\n", encoding="utf-8")
     return vault
+
+
+def latest_ingest_log(vault: Path) -> str:
+    logs = sorted((vault / "_runs").glob("*/ingest.log"))
+    assert logs
+    return logs[-1].read_text(encoding="utf-8")
+
+
+def init_git_vault(vault: Path) -> None:
+    env = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "Test User",
+        "GIT_AUTHOR_EMAIL": "test@example.invalid",
+        "GIT_COMMITTER_NAME": "Test User",
+        "GIT_COMMITTER_EMAIL": "test@example.invalid",
+    }
+    subprocess.run(["git", "init"], cwd=vault, check=True, capture_output=True, text=True, env=env)
+    subprocess.run(
+        ["git", "add", "--", ".manifest.json", "index.md", "log.md", "hot.md"],
+        cwd=vault,
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    subprocess.run(["git", "commit", "-m", "Initial vault"], cwd=vault, check=True, capture_output=True, text=True, env=env)
 
 
 def page_plan(source: Path, *, action: str = "create", path: str = "concepts/deterministic-ingest.md") -> dict[str, object]:
@@ -467,9 +527,12 @@ def test_oversized_sanitized_prompt_fails_before_codex(tmp_path: Path, monkeypat
     monkeypatch.setattr(ingest, "call_codex_exec", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("codex called")))
 
     assert cli.cmd_dispatch(args) == 1
-    err = capsys.readouterr().err
-    assert "above the 1000 character safety budget" in err
-    assert "html_markdown" in err
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+    log = latest_ingest_log(vault)
+    assert "above the 1000 character safety budget" in log
+    assert "html_markdown" in log
 
 
 def test_url_ingest_fails_before_planning_when_defuddle_is_missing(tmp_path: Path, monkeypatch) -> None:
@@ -484,7 +547,7 @@ def test_url_ingest_fails_before_planning_when_defuddle_is_missing(tmp_path: Pat
     monkeypatch.setattr(ingest, "call_codex_exec", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("codex called")))
 
     assert cli.cmd_dispatch(args) == 1
-    assert not (vault / "_runs").exists()
+    assert "defuddle executable not found" in latest_ingest_log(vault)
 
 
 def test_url_ingest_fails_before_planning_when_defuddle_fails_or_empty(tmp_path: Path, monkeypatch) -> None:
@@ -503,7 +566,7 @@ def test_url_ingest_fails_before_planning_when_defuddle_fails_or_empty(tmp_path:
     )
 
     assert cli.cmd_dispatch(args) == 1
-    assert not (vault / "_runs").exists()
+    assert "defuddle failed" in latest_ingest_log(vault)
 
     monkeypatch.setattr(
         ingest.subprocess,
@@ -512,7 +575,7 @@ def test_url_ingest_fails_before_planning_when_defuddle_fails_or_empty(tmp_path:
     )
 
     assert cli.cmd_dispatch(args) == 1
-    assert not (vault / "_runs").exists()
+    assert "defuddle returned empty content" in latest_ingest_log(vault)
 
 
 def test_pdf_source_packet_uses_mineru_markdown(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -636,6 +699,112 @@ def test_ingest_valid_plan_applies_pages_and_special_files(tmp_path: Path, monke
     assert "Apply is deterministic." in hot
 
 
+def test_ingest_commit_flag_commits_only_durable_wiki_files(tmp_path: Path, monkeypatch, capsys) -> None:
+    isolate_qmd_home(tmp_path, monkeypatch)
+    vault = make_vault(tmp_path)
+    init_git_vault(vault)
+    source = vault / "note.md"
+    source.write_text("hybrid ingest\n", encoding="utf-8")
+    args = IngestArgs([str(source)])
+    args.commit = True
+
+    def fake_codex(command: list[str], prompt: str, cwd: Path, env: dict[str, str] | None = None) -> int:
+        plan_path = plan_path_from_prompt(prompt)
+        plan_path.parent.mkdir(parents=True, exist_ok=True)
+        plan_path.write_text(json.dumps(page_plan(source)), encoding="utf-8")
+        return 0
+
+    original_run = subprocess.run
+    monkeypatch.chdir(vault)
+    monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(qmd_module.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(qmd_module.subprocess, "run", fake_qmd_run_with_git(original_run))
+    monkeypatch.setattr(ingest, "call_codex_exec", fake_codex)
+
+    assert cli.cmd_dispatch(args) == 0
+    capsys.readouterr()
+    show = subprocess.run(
+        ["git", "show", "--format=%s", "--name-only", "--no-renames", "HEAD"],
+        cwd=vault,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    lines = [line for line in show.stdout.splitlines() if line]
+    assert lines[0] == "Ingest: note.md"
+    assert set(lines[1:]) == {
+        ".manifest.json",
+        "concepts/deterministic-ingest.md",
+        "hot.md",
+        "index.md",
+        "log.md",
+    }
+    status = subprocess.run(["git", "status", "--short"], cwd=vault, check=True, capture_output=True, text=True)
+    assert "?? _sources/" in status.stdout
+    assert "?? note.md" in status.stdout
+
+
+def test_ingest_auto_commit_config_can_be_disabled_with_no_commit(tmp_path: Path, monkeypatch) -> None:
+    isolate_qmd_home(tmp_path, monkeypatch)
+    vault = make_vault(tmp_path)
+    init_git_vault(vault)
+    (vault / ".a-inf").mkdir()
+    (vault / ".a-inf" / "config.toml").write_text('auto_commit_ingest = "true"\n', encoding="utf-8")
+    source = vault / "note.md"
+    source.write_text("hybrid ingest\n", encoding="utf-8")
+    args = IngestArgs([str(source)])
+    args.no_commit = True
+
+    def fake_codex(command: list[str], prompt: str, cwd: Path, env: dict[str, str] | None = None) -> int:
+        plan_path = plan_path_from_prompt(prompt)
+        plan_path.parent.mkdir(parents=True, exist_ok=True)
+        plan_path.write_text(json.dumps(page_plan(source)), encoding="utf-8")
+        return 0
+
+    original_run = subprocess.run
+    monkeypatch.chdir(vault)
+    monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(qmd_module.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(qmd_module.subprocess, "run", fake_qmd_run_with_git(original_run))
+    monkeypatch.setattr(ingest, "call_codex_exec", fake_codex)
+
+    assert cli.cmd_dispatch(args) == 0
+    log = subprocess.run(["git", "log", "--oneline"], cwd=vault, check=True, capture_output=True, text=True)
+    assert len(log.stdout.splitlines()) == 1
+
+
+def test_ingest_commit_skips_pre_dirty_durable_paths(tmp_path: Path, monkeypatch, capsys) -> None:
+    isolate_qmd_home(tmp_path, monkeypatch)
+    vault = make_vault(tmp_path)
+    init_git_vault(vault)
+    (vault / "index.md").write_text("pre-existing edit\n", encoding="utf-8")
+    source = vault / "note.md"
+    source.write_text("hybrid ingest\n", encoding="utf-8")
+    args = IngestArgs([str(source)])
+    args.commit = True
+
+    def fake_codex(command: list[str], prompt: str, cwd: Path, env: dict[str, str] | None = None) -> int:
+        plan_path = plan_path_from_prompt(prompt)
+        plan_path.parent.mkdir(parents=True, exist_ok=True)
+        plan_path.write_text(json.dumps(page_plan(source)), encoding="utf-8")
+        return 0
+
+    original_run = subprocess.run
+    monkeypatch.chdir(vault)
+    monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(qmd_module.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(qmd_module.subprocess, "run", fake_qmd_run_with_git(original_run))
+    monkeypatch.setattr(ingest, "call_codex_exec", fake_codex)
+
+    assert cli.cmd_dispatch(args) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+    assert "Ingest auto-commit skipped: durable ingest paths were already dirty" in latest_ingest_log(vault)
+    log = subprocess.run(["git", "log", "--oneline"], cwd=vault, check=True, capture_output=True, text=True)
+    assert len(log.stdout.splitlines()) == 1
+
+
 def test_raw_ingest_defaults_to_once(tmp_path: Path, monkeypatch, capsys) -> None:
     isolate_qmd_home(tmp_path, monkeypatch)
     vault = make_vault(tmp_path)
@@ -670,8 +839,10 @@ def test_raw_ingest_defaults_to_once(tmp_path: Path, monkeypatch, capsys) -> Non
 
     assert cli.cmd_dispatch(args) == 0
     assert calls == ["first.md"]
-    output = capsys.readouterr().out
-    assert "Selected 2 sources; ingesting first only:" in output
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+    assert "Selected 2 sources; ingesting first only:" in latest_ingest_log(vault)
     assert not first.exists()
     assert second.exists()
     assert (vault / "concepts" / "first.md").is_file()
@@ -985,7 +1156,10 @@ def test_ingest_missing_qmd_fails_before_codex(tmp_path: Path, monkeypatch, caps
     monkeypatch.setattr(ingest, "call_codex_exec", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("codex called")))
 
     assert cli.cmd_dispatch(args) == 127
-    assert "npm install -g @tobilu/qmd" in capsys.readouterr().err
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+    assert "npm install -g @tobilu/qmd" in latest_ingest_log(vault)
 
 
 def test_ingest_checks_qmd_version_before_codex(tmp_path: Path, monkeypatch) -> None:

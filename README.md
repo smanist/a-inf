@@ -124,6 +124,10 @@ a-inf ingest --raw --batch
 
 When multiple sources are selected, `a-inf ingest` defaults to `--once`: it ingests only the first selected source and leaves the rest for later runs. Use `--batch` to plan all selected sources together in one Codex run when cross-source linking during the same ingest is more important than smaller prompts and incremental progress.
 
+Normal `a-inf ingest` runs write CLI and Codex output to `_runs/<run-id>/ingest.log` instead of printing progress to the terminal. Use `--print-prompt` when you explicitly want the generated ingest packet on stdout.
+
+Use `a-inf ingest --commit` to create a Git checkpoint after a successful ingest. The commit stages only durable wiki files from that ingest: planned pages, `.manifest.json`, `index.md`, `log.md`, and `hot.md`; local `_sources/`, `_runs/`, QMD state, and raw staging files stay out of the commit. Set `auto_commit_ingest = true` in `.a-inf/config.toml` or `A_INF_AUTO_COMMIT_INGEST=true` in legacy config to enable this by default, and pass `--no-commit` to disable it for one run. If any durable ingest path was already dirty before the run, auto-commit is skipped so unrelated edits are not bundled.
+
 Use `a-inf info` to inspect the raw config files and effective settings, `--sandbox read-only` for dry inspection workflows that still invoke Codex, or `--add-dir <path>` when an ingest source lives outside the vault and Codex needs access to it. `a-inf history` automatically adds `CODEX_HISTORY_PATH` or `~/.codex` when that directory exists.
 
 Commands that can be fully deterministic should move into Python over time. `a-inf status` is deterministic local Python, and `a-inf insights` is deterministic graph analysis with optional Codex explanation enrichment. Commands that require synthesis can keep using Codex behind the CLI.
@@ -159,6 +163,7 @@ Optional environment variables from `.env.example` still apply for skill workflo
 - `A_INF_ARCHIVE_SOURCES` (`true` by default)
 - `A_INF_SOURCE_ARCHIVE_DIR` (`_sources` by default)
 - `A_INF_QUERY_SOURCE_DETAIL` (`auto`, `explicit`, `always`, or `off`)
+- `A_INF_AUTO_COMMIT_INGEST` (`false` by default)
 - `A_INF_PDF_EXTRACTOR` (`auto`, `mineru`, or `none`)
 - `A_INF_MINERU_BIN`
 - `A_INF_MINERU_METHOD`

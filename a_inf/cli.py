@@ -334,6 +334,16 @@ def build_parser() -> argparse.ArgumentParser:
                 action="store_true",
                 help="Ingest all selected sources together in one semantic planning batch.",
             )
+            cmd.add_argument(
+                "--commit",
+                action="store_true",
+                help="Commit durable wiki changes after a successful ingest.",
+            )
+            cmd.add_argument(
+                "--no-commit",
+                action="store_true",
+                help="Disable ingest auto-commit even when configured.",
+            )
         if name == "lint":
             cmd.add_argument(
                 "--json",
@@ -2088,6 +2098,7 @@ QMD_PAPERS_COLLECTION={vault.name}
 A_INF_ARCHIVE_SOURCES=true
 A_INF_SOURCE_ARCHIVE_DIR=_sources
 A_INF_QUERY_SOURCE_DETAIL=auto
+A_INF_AUTO_COMMIT_INGEST=false
 """
 
 
