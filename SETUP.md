@@ -108,7 +108,9 @@ Ingest modes:
 ```bash
 a-inf ingest --mode append  # default, only new or modified sources
 a-inf ingest --mode full    # all supported configured sources
-a-inf ingest --raw          # promote files from _raw/
+a-inf ingest --raw          # promote the first selected file from _raw/
+a-inf ingest --raw --once   # explicit spelling of the default
+a-inf ingest --raw --batch  # promote files from _raw/ in one combined plan
 ```
 
 ## Command Mapping

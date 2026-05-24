@@ -137,6 +137,7 @@ def test_status_command_reports_delta_without_codex(
     vault = tmp_path / "vault"
     sources = tmp_path / "sources"
     vault.mkdir()
+    (vault / ".a-inf").mkdir()
     sources.mkdir()
     source = sources / "note.md"
     source.write_text("hello\n", encoding="utf-8")
@@ -178,6 +179,7 @@ def test_status_command_reports_pdf_sources(tmp_path: Path, monkeypatch, capsys)
     vault = tmp_path / "vault"
     sources = tmp_path / "sources"
     vault.mkdir()
+    (vault / ".a-inf").mkdir()
     sources.mkdir()
     source = sources / "paper.pdf"
     source.write_bytes(b"%PDF source")
@@ -196,11 +198,93 @@ def test_status_command_reports_pdf_sources(tmp_path: Path, monkeypatch, capsys)
     assert "**Ready to ingest:** 1 new + 0 modified = 1 sources" in output
 
 
+def test_status_json_reports_raw_ingest_job(tmp_path: Path, monkeypatch, capsys) -> None:
+    vault = tmp_path / "vault"
+    raw = vault / "_raw"
+    vault.mkdir()
+    (vault / ".a-inf").mkdir()
+    raw.mkdir()
+    pending = raw / "paper.pdf"
+    pending.write_bytes(b"%PDF source")
+    ingested = raw / "notes.md"
+    manifest = {
+        "version": 1,
+        "sources": {
+            str(ingested): {
+                "ingested_at": "2026-05-23T13:55:00+00:00",
+                "modified_at": "2026-05-23T13:50:00+00:00",
+                "content_hash": "sha256:old",
+                "size_bytes": 8,
+                "source_type": "document",
+            }
+        },
+        "projects": {},
+        "stats": {},
+    }
+    (vault / ".manifest.json").write_text(cli.json.dumps(manifest), encoding="utf-8")
+
+    class StatusJsonArgs(Args):
+        json = True
+        insights = False
+        args: list[str] = []
+
+    monkeypatch.chdir(vault)
+
+    result = cli.cmd_status(StatusJsonArgs())
+
+    assert result == 0
+    packet = cli.json.loads(capsys.readouterr().out)
+    assert packet["schema_version"] == 1
+    assert packet["health"] == "ok"
+    assert packet["agent"] == {"running": 0, "runnable": 1, "queued": 1, "blocked": 0}
+    assert packet["jobs"]["items"] == [
+        {
+            "id": "raw-ingest",
+            "kind": "raw_ingest",
+            "command": ["a-inf", "ingest", "--once", "--raw"],
+            "runnable": True,
+            "reason": "raw_file_pending",
+        }
+    ]
+    assert packet["raw_ingest"]["raw_dir"] == str(raw)
+    assert packet["raw_ingest"]["exists"] is True
+    assert packet["raw_ingest"]["pending_count"] == 1
+    assert packet["raw_ingest"]["in_progress"] is False
+    assert packet["raw_ingest"]["next_file"]["relpath"] == "_raw/paper.pdf"
+    assert packet["raw_ingest"]["next_file"]["name"] == "paper.pdf"
+    assert packet["raw_ingest"]["next_file"]["size_bytes"] == pending.stat().st_size
+    assert packet["raw_ingest"]["next_file"]["mtime"].endswith("Z")
+    assert packet["raw_ingest"]["last_ingest"] == {
+        "finished_at": "2026-05-23T13:55:00Z",
+        "source_relpath": "_raw/notes.md",
+        "status": "ok",
+    }
+    assert packet["source_deltas"]["counts"]["new"] == 0
+    assert packet["source_deltas"]["ready_count"] == 0
+
+
+def test_status_requires_a_inf_structure(tmp_path: Path, monkeypatch, capsys) -> None:
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    (plain / ".manifest.json").write_text('{"version": 1}\n', encoding="utf-8")
+
+    monkeypatch.chdir(plain)
+
+    result = cli.cmd_status(Args())
+
+    assert result == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Not an a-inf vault" in captured.err
+    assert "a-inf init" in captured.err
+
+
 def test_status_insights_routes_to_wiki_insights(
     tmp_path: Path, monkeypatch
 ) -> None:
     vault = tmp_path / "vault"
     vault.mkdir()
+    (vault / ".a-inf").mkdir()
     (vault / ".manifest.json").write_text('{"version": 1}\n', encoding="utf-8")
     calls: list[Path] = []
 

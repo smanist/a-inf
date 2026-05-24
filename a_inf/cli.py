@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 import tomllib
+from typing import Any
 from urllib.parse import urlparse
 
 from a_inf.managed_files import ensure_managed_tag, ensure_vault_managed_tags, managed_tags
@@ -265,6 +266,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run graph insights instead of the deterministic status report.",
     )
     status_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print the deterministic status report as JSON.",
+    )
+    status_parser.add_argument(
         "args",
         nargs="*",
         help="Optional compatibility arguments. Insight-related words route to wiki-insights.",
@@ -316,6 +322,17 @@ def build_parser() -> argparse.ArgumentParser:
                 "--raw",
                 action="store_true",
                 help="Alias for --mode raw.",
+            )
+            strategy = cmd.add_mutually_exclusive_group()
+            strategy.add_argument(
+                "--once",
+                action="store_true",
+                help="Ingest only the first selected source. This is the default.",
+            )
+            strategy.add_argument(
+                "--batch",
+                action="store_true",
+                help="Ingest all selected sources together in one semantic planning batch.",
             )
         if name == "lint":
             cmd.add_argument(
@@ -920,6 +937,14 @@ def cmd_skill(args: argparse.Namespace) -> int:
 
 
 def cmd_status(args: argparse.Namespace) -> int:
+    vault = find_vault_root(Path.cwd())
+    if not has_a_inf_structure(vault):
+        print(
+            f"Not an a-inf vault: {Path.cwd()}. Run `a-inf init` first or cd into a folder containing .a-inf.",
+            file=sys.stderr,
+        )
+        return 1
+
     insight_terms = " ".join(getattr(args, "args", [])).lower()
     if getattr(args, "insights", False) or any(
         term in insight_terms
@@ -927,11 +952,13 @@ def cmd_status(args: argparse.Namespace) -> int:
     ):
         from a_inf.insights import run_insights
 
-        vault = find_vault_root(Path.cwd())
         return run_insights(args, vault, load_wiki_config(vault))
 
-    vault = find_vault_root(Path.cwd())
-    print(build_status_report(vault))
+    packet = build_status_packet(vault)
+    if getattr(args, "json", False):
+        print(json.dumps(packet, indent=2))
+    else:
+        print(build_status_report(vault, packet))
     return 0
 
 
@@ -1086,7 +1113,7 @@ PDF_SUFFIXES = {".pdf"}
 SUPPORTED_SOURCE_SUFFIXES = TEXT_SUFFIXES | IMAGE_SUFFIXES | PDF_SUFFIXES
 
 
-def build_status_report(vault: Path) -> str:
+def build_status_packet(vault: Path) -> dict[str, Any]:
     config = load_wiki_config(vault)
     manifest, manifest_exists = read_manifest(vault)
     sources = scan_sources(vault, config, manifest)
@@ -1094,8 +1121,14 @@ def build_status_report(vault: Path) -> str:
     page_counts, visibility = scan_wiki_pages(vault)
 
     source_entries = manifest.get("sources", {})
+    if not isinstance(source_entries, dict):
+        source_entries = {}
     projects = manifest.get("projects", {})
+    if not isinstance(projects, dict):
+        projects = {}
     stats = manifest.get("stats", {})
+    if not isinstance(stats, dict):
+        stats = {}
     total_ingested = int(stats.get("total_sources_ingested") or len(source_entries))
     total_projects = int(stats.get("total_projects") or len(projects))
     last_ingest = latest_ingest_time(manifest)
@@ -1119,12 +1152,77 @@ def build_status_report(vault: Path) -> str:
 
     category_count = sum(1 for count in page_counts.values() if count)
     total_pages = sum(page_counts.values())
+    raw_ingest = build_raw_ingest_status(vault, config, manifest)
+    jobs = build_status_jobs(raw_ingest)
+    agent = {
+        "running": 1 if raw_ingest["in_progress"] else 0,
+        "runnable": jobs["runnable"],
+        "queued": jobs["queued"],
+        "blocked": jobs["blocked"],
+    }
+    warnings: list[str] = []
+    return {
+        "schema_version": 1,
+        "health": "ok" if not warnings and jobs["blocked"] == 0 else "warning",
+        "warnings": warnings,
+        "vault": str(vault),
+        "overview": {
+            "total_wiki_pages": total_pages,
+            "category_count": category_count,
+            "page_counts": page_counts,
+            "visibility": visibility,
+            "total_sources_ingested": total_ingested,
+            "archived_source_detail_layers": archived_sources,
+            "projects_tracked": total_projects,
+            "last_ingest": last_ingest,
+            "configured_document_sources": format_configured_paths(config.get("OBSIDIAN_SOURCES_DIR")),
+            "codex_history_path": format_configured_paths(
+                os.environ.get("CODEX_HISTORY_PATH") or config.get("CODEX_HISTORY_PATH")
+            ),
+            "manifest_exists": manifest_exists,
+        },
+        "agent": agent,
+        "jobs": jobs,
+        "raw_ingest": raw_ingest,
+        "source_deltas": {
+            "ready_count": ready_count,
+            "recommendation": recommendation,
+            "counts": {
+                "new": len(new),
+                "modified": len(modified),
+                "touched": len(touched),
+                "unchanged": len(unchanged),
+                "deleted": len(deleted),
+            },
+            "items": {
+                "new": [source_delta_to_json(delta) for delta in new],
+                "modified": [source_delta_to_json(delta) for delta in modified],
+                "touched": [source_delta_to_json(delta) for delta in touched],
+                "unchanged": [source_delta_to_json(delta) for delta in unchanged],
+                "deleted": [source_delta_to_json(delta) for delta in deleted],
+            },
+        },
+    }
+
+
+def build_status_report(vault: Path, packet: dict[str, Any] | None = None) -> str:
+    if packet is None:
+        packet = build_status_packet(vault)
+    overview = packet["overview"]
+    visibility = overview["visibility"]
+    source_deltas = packet["source_deltas"]
+    delta_counts = source_deltas["counts"]
+    raw_ingest = packet["raw_ingest"]
+    jobs = packet["jobs"]
+    agent = packet["agent"]
+
     lines = [
         "# Wiki Status",
         "",
         "## Overview",
         f"- **Vault:** {vault}",
-        f"- **Total wiki pages:** {total_pages} across {category_count} categories",
+        f"- **Health:** {packet['health']}",
+        f"- **Total wiki pages:** {overview['total_wiki_pages']} across {overview['category_count']} categories",
     ]
     if visibility["internal"] or visibility["pii"] or visibility["explicit_public"]:
         lines.append(
@@ -1133,52 +1231,252 @@ def build_status_report(vault: Path) -> str:
         )
     lines.extend(
         [
-            f"- **Total sources ingested:** {total_ingested}",
-            f"- **Archived source detail layers:** {archived_sources}",
-            f"- **Projects tracked:** {total_projects}",
-            f"- **Last ingest:** {last_ingest or 'never'}",
-            f"- **Configured document sources:** {format_configured_paths(config.get('OBSIDIAN_SOURCES_DIR'))}",
-            f"- **Codex history path:** "
-            f"{format_configured_paths(os.environ.get('CODEX_HISTORY_PATH') or config.get('CODEX_HISTORY_PATH'))}",
+            f"- **Total sources ingested:** {overview['total_sources_ingested']}",
+            f"- **Archived source detail layers:** {overview['archived_source_detail_layers']}",
+            f"- **Projects tracked:** {overview['projects_tracked']}",
+            f"- **Last ingest:** {overview['last_ingest'] or 'never'}",
+            f"- **Configured document sources:** {overview['configured_document_sources']}",
+            f"- **Codex history path:** {overview['codex_history_path']}",
+            "",
+            "## Agent Queue",
+            f"- **Agent:** {agent['running']} running, {agent['runnable']} runnable, "
+            f"{agent['queued']} queued, {agent['blocked']} blocked",
+            f"- **Raw ingest:** {raw_ingest['pending_count']} pending in {raw_ingest['raw_dir']}",
+            f"- **Raw ingest in progress:** {'yes' if raw_ingest['in_progress'] else 'no'}",
+        ]
+    )
+    if raw_ingest.get("next_file"):
+        next_file = raw_ingest["next_file"]
+        lines.append(
+            f"- **Next raw file:** {next_file['relpath']} "
+            f"({format_bytes(int(next_file['size_bytes']))}, {next_file['mtime']})"
+        )
+    if raw_ingest.get("last_ingest"):
+        last_raw = raw_ingest["last_ingest"]
+        lines.append(
+            f"- **Last raw ingest:** {last_raw['source_relpath']} "
+            f"{last_raw['status']} at {last_raw['finished_at']}"
+        )
+    if jobs["items"]:
+        job_text = ", ".join(
+            f"{item['id']} ({'runnable' if item['runnable'] else item['reason']})" for item in jobs["items"]
+        )
+        lines.append(f"- **Jobs:** {job_text}")
+    else:
+        lines.append("- **Jobs:** none")
+
+    lines.extend(
+        [
             "",
             "## Delta (what's changed since last ingest)",
             "",
-            f"### New sources (never ingested): {len(new)}",
-            render_delta_table(new, ["Source", "Type", "Size"], lambda d: [
-                d.source.display if d.source else d.manifest_key,
-                d.source.source_type if d.source else source_type_from_entry(d.entry),
-                format_bytes(d.source.size_bytes) if d.source else "-",
-            ]),
+            f"### New sources (never ingested): {delta_counts['new']}",
+            render_status_delta_items(source_deltas["items"]["new"], ["source", "source_type", "size_bytes"]),
             "",
-            f"### Modified sources (need re-ingesting): {len(modified)}",
-            render_delta_table(modified, ["Source", "Last ingested", "Last modified", "Delta"], lambda d: [
-                d.source.display if d.source else d.manifest_key,
-                str(d.entry.get("ingested_at") or "-"),
-                format_datetime(d.source.modified_at) if d.source else "-",
-                d.reason,
-            ]),
+            f"### Modified sources (need re-ingesting): {delta_counts['modified']}",
+            render_status_delta_items(source_deltas["items"]["modified"], ["source", "ingested_at", "modified_at", "reason"]),
             "",
-            f"### Touched sources (content unchanged): {len(touched)}",
-            render_delta_table(touched, ["Source", "Reason"], lambda d: [
-                d.source.display if d.source else d.manifest_key,
-                d.reason,
-            ]),
+            f"### Touched sources (content unchanged): {delta_counts['touched']}",
+            render_status_delta_items(source_deltas["items"]["touched"], ["source", "reason"]),
             "",
-            f"### Deleted sources (ingested but gone): {len(deleted)}",
-            render_delta_table(deleted, ["Source", "Last ingested"], lambda d: [
-                d.manifest_key,
-                str(d.entry.get("ingested_at") or "-"),
-            ]),
+            f"### Deleted sources (ingested but gone): {delta_counts['deleted']}",
+            render_status_delta_items(source_deltas["items"]["deleted"], ["manifest_key", "ingested_at"]),
             "",
             "## Summary",
-            f"- **Ready to ingest:** {len(new)} new + {len(modified)} modified = {ready_count} sources",
-            f"- **Up to date:** {len(unchanged)} unchanged",
-            f"- **Touched but identical:** {len(touched)}",
-            f"- **Deleted:** {len(deleted)}",
-            f"- **Recommendation:** {recommendation}",
+            f"- **Ready to ingest:** {delta_counts['new']} new + {delta_counts['modified']} modified = "
+            f"{source_deltas['ready_count']} sources",
+            f"- **Up to date:** {delta_counts['unchanged']} unchanged",
+            f"- **Touched but identical:** {delta_counts['touched']}",
+            f"- **Deleted:** {delta_counts['deleted']}",
+            f"- **Recommendation:** {source_deltas['recommendation']}",
         ]
     )
     return "\n".join(lines)
+
+
+def source_delta_to_json(delta: SourceDelta) -> dict[str, Any]:
+    data: dict[str, Any] = {
+        "manifest_key": delta.manifest_key,
+        "status": delta.status,
+        "reason": delta.reason,
+        "ingested_at": delta.entry.get("ingested_at") if isinstance(delta.entry, dict) else None,
+    }
+    if delta.source is not None:
+        data.update(
+            {
+                "source": delta.source.display,
+                "path": str(delta.source.path),
+                "source_type": delta.source.source_type,
+                "size_bytes": delta.source.size_bytes,
+                "modified_at": status_datetime(delta.source.modified_at),
+            }
+        )
+    else:
+        data.update(
+            {
+                "source": None,
+                "source_type": source_type_from_entry(delta.entry),
+                "size_bytes": None,
+                "modified_at": None,
+            }
+        )
+    return data
+
+
+def build_raw_ingest_status(vault: Path, config: dict[str, str], manifest: dict[str, object]) -> dict[str, Any]:
+    root = raw_status_dir(vault, config)
+    exists = root.exists() and root.is_dir()
+    pending = scan_raw_pending(root, vault) if exists else []
+    return {
+        "raw_dir": str(root),
+        "exists": exists,
+        "pending_count": len(pending),
+        "in_progress": raw_ingest_in_progress(vault),
+        "next_file": raw_file_to_json(pending[0], vault) if pending else None,
+        "last_ingest": latest_raw_ingest(manifest, vault, root),
+    }
+
+
+def raw_status_dir(vault: Path, config: dict[str, str]) -> Path:
+    raw = config.get("OBSIDIAN_RAW_DIR") or "_raw"
+    path = Path(raw).expanduser()
+    return path if path.is_absolute() else vault / path
+
+
+def scan_raw_pending(root: Path, vault: Path) -> list[SourceFile]:
+    pending: list[SourceFile] = []
+    for path in root.rglob("*"):
+        if path.is_file() and is_supported_status_source(path):
+            pending.append(raw_source_file(path, vault))
+    return sorted(pending, key=lambda source: relative_path_text(source.path, vault))
+
+
+def raw_source_file(path: Path, vault: Path) -> SourceFile:
+    resolved = path.expanduser().resolve()
+    stat = resolved.stat()
+    return SourceFile(
+        path=resolved,
+        display=relative_path_text(resolved, vault),
+        size_bytes=stat.st_size,
+        modified_at=datetime.fromtimestamp(stat.st_mtime, timezone.utc),
+        source_type=source_type_for_path(resolved),
+    )
+
+
+def raw_file_to_json(source: SourceFile, vault: Path) -> dict[str, Any]:
+    return {
+        "relpath": relative_path_text(source.path, vault),
+        "name": source.path.name,
+        "size_bytes": source.size_bytes,
+        "mtime": status_datetime(source.modified_at),
+    }
+
+
+def raw_ingest_in_progress(vault: Path) -> bool:
+    root = vault / "_runs"
+    if not root.exists():
+        return False
+    for run_dir in root.iterdir():
+        if not run_dir.is_dir():
+            continue
+        packet_path = run_dir / "packet.json"
+        if not packet_path.exists() or (run_dir / "plan.json").exists():
+            continue
+        try:
+            packet = json.loads(packet_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+        if isinstance(packet, dict) and packet.get("mode") == "raw":
+            return True
+    return False
+
+
+def latest_raw_ingest(manifest: dict[str, object], vault: Path, raw_root: Path) -> dict[str, Any] | None:
+    source_entries = manifest.get("sources", {})
+    if not isinstance(source_entries, dict):
+        return None
+    raw_resolved = raw_root.expanduser().resolve(strict=False)
+    candidates: list[tuple[datetime, str, str]] = []
+    for key, entry in source_entries.items():
+        if not isinstance(key, str) or not is_path_source(key) or not isinstance(entry, dict):
+            continue
+        source_path = Path(key).expanduser().resolve(strict=False)
+        if not is_relative_to_path(source_path, raw_resolved):
+            continue
+        ingested_at = str(entry.get("ingested_at") or "")
+        parsed = parse_datetime(ingested_at)
+        if parsed is None:
+            continue
+        candidates.append((parsed, relative_path_text(source_path, vault), "ok"))
+    if not candidates:
+        return None
+    finished_at, relpath, status = sorted(candidates, key=lambda item: item[0])[-1]
+    return {
+        "finished_at": status_datetime(finished_at),
+        "source_relpath": relpath,
+        "status": status,
+    }
+
+
+def build_status_jobs(raw_ingest: dict[str, Any]) -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+    pending_count = int(raw_ingest.get("pending_count") or 0)
+    in_progress = bool(raw_ingest.get("in_progress"))
+    if pending_count or in_progress:
+        runnable = pending_count > 0 and not in_progress
+        items.append(
+            {
+                "id": "raw-ingest",
+                "kind": "raw_ingest",
+                "command": ["a-inf", "ingest", "--once", "--raw"],
+                "runnable": runnable,
+                "reason": "raw_ingest_in_progress" if in_progress else "raw_file_pending",
+            }
+        )
+    return {
+        "runnable": sum(1 for item in items if item["runnable"]),
+        "queued": len(items),
+        "blocked": 0,
+        "items": items,
+    }
+
+
+def render_status_delta_items(items: list[dict[str, Any]], fields: list[str], limit: int = 10) -> str:
+    if not items:
+        return "_None._"
+    lines: list[str] = []
+    for item in items[:limit]:
+        source = str(item.get(fields[0]) or item.get("manifest_key") or "-")
+        details = []
+        for field in fields[1:]:
+            value = item.get(field)
+            if field == "size_bytes" and isinstance(value, int):
+                value = format_bytes(value)
+            details.append(str(value or "-"))
+        suffix = f" - {', '.join(details)}" if details else ""
+        lines.append(f"- {source}{suffix}")
+    if len(items) > limit:
+        lines.append(f"_Showing {limit} of {len(items)}._")
+    return "\n".join(lines)
+
+
+def relative_path_text(path: Path, vault: Path) -> str:
+    try:
+        return path.relative_to(vault).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def status_datetime(value: datetime) -> str:
+    return value.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def is_relative_to_path(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
 
 
 def load_wiki_config(vault: Path) -> dict[str, str]:
@@ -1574,6 +1872,10 @@ def find_vault_root(start: Path) -> Path:
         if (candidate / ".a-inf" / "config.toml").exists() or (candidate / ".manifest.json").exists():
             return candidate
     return start.resolve()
+
+
+def has_a_inf_structure(vault: Path) -> bool:
+    return (vault / ".a-inf").is_dir()
 
 
 def write_file_if_missing(path: Path, content: str) -> None:

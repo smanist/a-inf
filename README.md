@@ -118,7 +118,11 @@ The default mode is append. Full and raw modes are available:
 ```bash
 a-inf ingest --mode full
 a-inf ingest --raw
+a-inf ingest --raw --once
+a-inf ingest --raw --batch
 ```
+
+When multiple sources are selected, `a-inf ingest` defaults to `--once`: it ingests only the first selected source and leaves the rest for later runs. Use `--batch` to plan all selected sources together in one Codex run when cross-source linking during the same ingest is more important than smaller prompts and incremental progress.
 
 Use `a-inf info` to inspect the raw config files and effective settings, `--sandbox read-only` for dry inspection workflows that still invoke Codex, or `--add-dir <path>` when an ingest source lives outside the vault and Codex needs access to it. `a-inf history` automatically adds `CODEX_HISTORY_PATH` or `~/.codex` when that directory exists.
 

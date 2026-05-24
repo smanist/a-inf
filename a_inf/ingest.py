@@ -112,6 +112,7 @@ class IngestSource:
     html_extraction: dict[str, Any] | None = None
     embedded_figures: list[dict[str, Any]] | None = None
     embedded_figure_data: dict[str, bytes] | None = None
+    cleanup_paths: tuple[Path, ...] = ()
     target_path: str | None = None
     pdf_extract: dict[str, Any] | None = None
     archive: dict[str, Any] | None = None
@@ -137,18 +138,18 @@ class IngestError(Exception):
 
 
 def run_hybrid_ingest(args: Any, vault: Path) -> int:
-    run: IngestRun | None = None
+    runs: list[IngestRun] = []
     try:
         mode = resolve_mode(args)
+        strategy = resolve_strategy(args)
         config = load_wiki_config(vault)
         manifest, _ = read_manifest(vault)
         sources = select_sources(vault, config, manifest, list(getattr(args, "args", [])), mode)
         qmd = resolve_qmd(config, vault)
-        run = make_run(vault)
-        prompt = build_codex_prompt(vault, config, manifest, sources, run, mode, qmd)
+        groups = source_groups(sources, strategy)
 
         if getattr(args, "print_prompt", False) or getattr(args, "no_codex", False):
-            print_run_packet(vault, config, sources, run, mode, prompt, qmd)
+            print_preview_packets(vault, config, manifest, groups, mode, strategy, qmd)
             return 0
 
         if not require_qmd(qmd):
@@ -156,18 +157,16 @@ def run_hybrid_ingest(args: Any, vault: Path) -> int:
         if not ensure_qmd_collection(vault, config):
             return 127
 
-        run.run_dir.mkdir(parents=True, exist_ok=True)
-        write_json(run.run_dir / "packet.json", run_packet(vault, config, sources, run, mode, prompt, qmd))
-
         if not sources:
             print("No sources selected for ingest.")
             return 0
-        validate_codex_prompt_size(prompt, sources)
+        if strategy == "once" and len(sources) > 1:
+            print(f"Selected {len(sources)} sources; ingesting first only: {sources[0].manifest_key}")
 
         codex_bin = shutil.which(getattr(args, "codex_bin", "codex"))
         if codex_bin is None:
             print("Codex executable not found. Re-run with --print-prompt or install Codex CLI.", file=sys.stderr)
-            print_run_packet(vault, config, sources, run, mode, prompt, qmd)
+            print_preview_packets(vault, config, manifest, groups, mode, strategy, qmd)
             return 127
 
         command = [
@@ -180,29 +179,62 @@ def run_hybrid_ingest(args: Any, vault: Path) -> int:
         ]
         for directory in codex_add_dirs(vault, sources, list(getattr(args, "add_dir", [])), qmd):
             command.extend(["--add-dir", str(directory)])
-        result = call_codex_exec(command, prompt, cwd=vault, env=qmd_env(os.environ, vault))
-        if result != 0:
-            return result
 
-        plan = read_plan(run.plan_path)
-        validated = validate_plan(plan, vault, config, manifest, sources, mode)
-        warnings = apply_plan(validated, vault, config, manifest, sources, mode)
+        created = 0
+        updated = 0
+        warnings: list[str] = []
+        for group in groups:
+            manifest, _ = read_manifest(vault)
+            result, group_created, group_updated, group_warnings, run = run_ingest_group(
+                vault, config, manifest, group, mode, qmd, command
+            )
+            runs.append(run)
+            if result != 0:
+                return result
+            created += group_created
+            updated += group_updated
+            warnings.extend(group_warnings)
+
         if not sync_qmd(vault, config):
             warnings.append("QMD sync failed after ingest; wiki files were still applied.")
         prune_runs(vault)
         for warning in warnings:
             print(f"warning: {warning}", file=sys.stderr)
-        print(
-            f"Ingest applied: {sum(1 for page in validated.pages if page['action'] == 'create')} created, "
-            f"{sum(1 for page in validated.pages if page['action'] == 'update')} updated."
-        )
+        print(f"Ingest applied: {created} created, {updated} updated.")
         return 0
     except IngestError as exc:
         print(f"Ingest failed: {exc}", file=sys.stderr)
         return 1
     finally:
-        if run is not None and run.run_dir.exists():
+        if any(run.run_dir.exists() for run in runs):
             prune_runs(vault)
+
+
+def run_ingest_group(
+    vault: Path,
+    config: dict[str, str],
+    manifest: dict[str, Any],
+    sources: list[IngestSource],
+    mode: str,
+    qmd: QmdInfo | None,
+    command: list[str],
+) -> tuple[int, int, int, list[str], IngestRun]:
+    run = make_run(vault)
+    prompt = build_codex_prompt(vault, config, manifest, sources, run, mode, qmd)
+    validate_codex_prompt_size(prompt, sources)
+    run.run_dir.mkdir(parents=True, exist_ok=True)
+    write_json(run.run_dir / "packet.json", run_packet(vault, config, sources, run, mode, prompt, qmd))
+
+    result = call_codex_exec(command, prompt, cwd=vault, env=qmd_env(os.environ, vault))
+    if result != 0:
+        return result, 0, 0, [], run
+
+    plan = read_plan(run.plan_path)
+    validated = validate_plan(plan, vault, config, manifest, sources, mode)
+    warnings = apply_plan(validated, vault, config, manifest, sources, mode)
+    created = sum(1 for page in validated.pages if page["action"] == "create")
+    updated = sum(1 for page in validated.pages if page["action"] == "update")
+    return 0, created, updated, warnings, run
 
 
 def call_codex_exec(command: list[str], prompt: str, cwd: Path, env: dict[str, str]) -> int:
@@ -244,6 +276,22 @@ def resolve_mode(args: Any) -> str:
     if mode not in {"append", "full", "raw"}:
         raise IngestError(f"Unsupported ingest mode: {mode}")
     return mode
+
+
+def resolve_strategy(args: Any) -> str:
+    batch = bool(getattr(args, "batch", False))
+    once = bool(getattr(args, "once", False))
+    if batch and once:
+        raise IngestError("--batch and --once cannot be combined")
+    return "batch" if batch else "once"
+
+
+def source_groups(sources: list[IngestSource], strategy: str) -> list[list[IngestSource]]:
+    if strategy == "batch":
+        return [sources]
+    if strategy == "once":
+        return [[sources[0]]] if sources else []
+    raise IngestError(f"Unsupported ingest strategy: {strategy}")
 
 
 def load_wiki_config(vault: Path) -> dict[str, str]:
@@ -492,6 +540,7 @@ def build_source(
             vault=vault,
             config=config,
         )
+        source = replace(source, cleanup_paths=html_defuddle_cleanup_candidates(resolved))
     return with_archive_preview(source, vault, config)
 
 
@@ -577,6 +626,25 @@ def prepare_html_source(
         embedded_figures=extractor.figures,
         embedded_figure_data=extractor.figure_data,
     )
+
+
+def html_defuddle_cleanup_candidates(path: Path) -> tuple[Path, ...]:
+    if path.suffix.lower() not in HTML_SUFFIXES:
+        return ()
+    candidates = [
+        path.with_suffix(".md"),
+        Path(f"{path}.md"),
+        path.with_suffix(".markdown"),
+        Path(f"{path}.markdown"),
+    ]
+    unique: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in candidates:
+        resolved = candidate.expanduser().resolve(strict=False)
+        if resolved not in seen:
+            unique.append(candidate)
+            seen.add(resolved)
+    return tuple(unique)
 
 
 def run_defuddle_html(html_text: str, label: str) -> str:
@@ -1458,6 +1526,30 @@ def print_run_packet(
     print(json.dumps(run_packet(vault, config, sources, run, mode, prompt, qmd), indent=2))
 
 
+def print_preview_packets(
+    vault: Path,
+    config: dict[str, str],
+    manifest: dict[str, Any],
+    groups: list[list[IngestSource]],
+    mode: str,
+    strategy: str,
+    qmd: QmdInfo | None,
+) -> None:
+    if len(groups) <= 1:
+        sources = groups[0] if groups else []
+        run = make_run(vault)
+        prompt = build_codex_prompt(vault, config, manifest, sources, run, mode, qmd)
+        print_run_packet(vault, config, sources, run, mode, prompt, qmd)
+        return
+
+    packets = []
+    for group in groups:
+        run = make_run(vault)
+        prompt = build_codex_prompt(vault, config, manifest, group, run, mode, qmd)
+        packets.append(run_packet(vault, config, group, run, mode, prompt, qmd))
+    print(json.dumps({"strategy": strategy, "runs": packets}, indent=2))
+
+
 def run_packet(
     vault: Path,
     config: dict[str, str],
@@ -1765,10 +1857,50 @@ def apply_plan(
     append_log(vault, plan, now, mode)
     write_hot(vault, plan, now)
 
-    for path in plan.raw_files_to_delete:
+    for path in raw_cleanup_paths(plan, selected_sources, vault, config, mode):
         path.unlink()
 
     return post_apply_warnings(vault)
+
+
+def raw_cleanup_paths(
+    plan: ValidatedPlan,
+    selected_sources: list[IngestSource],
+    vault: Path,
+    config: dict[str, str],
+    mode: str,
+) -> list[Path]:
+    if mode != "raw":
+        return list(plan.raw_files_to_delete)
+
+    raw_root = raw_dir(vault, config).resolve()
+    sources_by_key = {source.manifest_key: source for source in selected_sources}
+    cleanup: list[Path] = []
+    seen: set[Path] = set()
+
+    def add(path: Path) -> None:
+        resolved = path.expanduser().resolve()
+        if resolved in seen or not is_relative_to(resolved, raw_root) or not resolved.exists():
+            return
+        cleanup.append(resolved)
+        seen.add(resolved)
+
+    for path in plan.raw_files_to_delete:
+        add(path)
+
+    for source_entry in plan.sources:
+        pages = [*source_entry.get("pages_created", []), *source_entry.get("pages_updated", [])]
+        if not pages:
+            continue
+        source = sources_by_key.get(str(source_entry["manifest_key"]))
+        if source is None:
+            continue
+        if source.path is not None:
+            add(source.path)
+        for path in source.cleanup_paths:
+            add(path)
+
+    return cleanup
 
 
 def create_source_archives(

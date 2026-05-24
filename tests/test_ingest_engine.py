@@ -16,6 +16,8 @@ class IngestArgs:
     mode = "append"
     full = False
     raw = False
+    batch = False
+    once = False
     print_prompt = False
     no_codex = False
     codex_bin = "codex"
@@ -40,6 +42,14 @@ def plan_path_from_prompt(prompt: str) -> Path:
     match = re.search(r"Write exactly one JSON file at this path: (.+)", prompt)
     assert match
     return Path(match.group(1).strip())
+
+
+def packet_from_prompt(prompt: str) -> dict[str, object]:
+    match = re.search(r"Selected ingest packet:\n(.+?)\n\nwiki-ingest skill instructions:", prompt, re.DOTALL)
+    assert match
+    packet = json.loads(match.group(1))
+    assert isinstance(packet, dict)
+    return packet
 
 
 def test_call_codex_exec_passes_prompt_on_stdin(tmp_path: Path, monkeypatch) -> None:
@@ -624,6 +634,158 @@ def test_ingest_valid_plan_applies_pages_and_special_files(tmp_path: Path, monke
     hot = (vault / "hot.md").read_text(encoding="utf-8")
     assert "tags: [a-inf]" in hot
     assert "Apply is deterministic." in hot
+
+
+def test_raw_ingest_defaults_to_once(tmp_path: Path, monkeypatch, capsys) -> None:
+    isolate_qmd_home(tmp_path, monkeypatch)
+    vault = make_vault(tmp_path)
+    first = vault / "_raw" / "first.md"
+    second = vault / "_raw" / "second.md"
+    first.write_text("first raw note\n", encoding="utf-8")
+    second.write_text("second raw note\n", encoding="utf-8")
+    args = IngestArgs([])
+    args.raw = True
+    calls: list[str] = []
+
+    def fake_codex(command: list[str], prompt: str, cwd: Path, env: dict[str, str] | None = None) -> int:
+        packet = packet_from_prompt(prompt)
+        sources = packet["sources"]
+        assert isinstance(sources, list)
+        assert len(sources) == 1
+        source = Path(str(sources[0]["path"]))
+        calls.append(source.name)
+        plan = page_plan(source, path=f"concepts/{source.stem}.md")
+        plan["mode"] = "raw"
+        plan["raw_files_to_delete"] = [str(source)]
+        plan_path = plan_path_from_prompt(prompt)
+        plan_path.parent.mkdir(parents=True, exist_ok=True)
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        return 0
+
+    monkeypatch.chdir(vault)
+    monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(qmd_module.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(qmd_module.subprocess, "run", fake_qmd_run)
+    monkeypatch.setattr(ingest, "call_codex_exec", fake_codex)
+
+    assert cli.cmd_dispatch(args) == 0
+    assert calls == ["first.md"]
+    output = capsys.readouterr().out
+    assert "Selected 2 sources; ingesting first only:" in output
+    assert not first.exists()
+    assert second.exists()
+    assert (vault / "concepts" / "first.md").is_file()
+    assert not (vault / "concepts" / "second.md").exists()
+
+
+def test_raw_ingest_batch_processes_all_sources_together(tmp_path: Path, monkeypatch) -> None:
+    isolate_qmd_home(tmp_path, monkeypatch)
+    vault = make_vault(tmp_path)
+    first = vault / "_raw" / "first.md"
+    second = vault / "_raw" / "second.md"
+    first.write_text("first raw note\n", encoding="utf-8")
+    second.write_text("second raw note\n", encoding="utf-8")
+    args = IngestArgs([])
+    args.raw = True
+    args.batch = True
+    calls = 0
+
+    def fake_codex(command: list[str], prompt: str, cwd: Path, env: dict[str, str] | None = None) -> int:
+        nonlocal calls
+        calls += 1
+        packet = packet_from_prompt(prompt)
+        sources = packet["sources"]
+        assert isinstance(sources, list)
+        assert [Path(str(source["path"])).name for source in sources] == ["first.md", "second.md"]
+        plans = [
+            page_plan(Path(str(source["path"])), path=f"concepts/{Path(str(source['path'])).stem}.md")
+            for source in sources
+        ]
+        plan = plans[0]
+        plan["mode"] = "raw"
+        plan["sources"] = [source for source_plan in plans for source in source_plan["sources"]]
+        plan["pages"] = [page for source_plan in plans for page in source_plan["pages"]]
+        plan["raw_files_to_delete"] = [str(first), str(second)]
+        plan_path = plan_path_from_prompt(prompt)
+        plan_path.parent.mkdir(parents=True, exist_ok=True)
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        return 0
+
+    monkeypatch.chdir(vault)
+    monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(qmd_module.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(qmd_module.subprocess, "run", fake_qmd_run)
+    monkeypatch.setattr(ingest, "call_codex_exec", fake_codex)
+
+    assert cli.cmd_dispatch(args) == 0
+    assert calls == 1
+    assert not first.exists()
+    assert not second.exists()
+    assert (vault / "concepts" / "first.md").is_file()
+    assert (vault / "concepts" / "second.md").is_file()
+
+
+def test_raw_html_ingest_deletes_source_without_plan_delete(tmp_path: Path, monkeypatch) -> None:
+    isolate_qmd_home(tmp_path, monkeypatch)
+    vault = make_vault(tmp_path)
+    source = vault / "_raw" / "adj.html"
+    defuddle_extract = vault / "_raw" / "adj.html.md"
+    source.write_text("<html><body><h1>Claim</h1><p>Notes</p></body></html>", encoding="utf-8")
+    defuddle_extract.write_text("# Claim\n\nNotes\n", encoding="utf-8")
+    args = IngestArgs([])
+    args.raw = True
+
+    def fake_codex(command: list[str], prompt: str, cwd: Path, env: dict[str, str] | None = None) -> int:
+        packet = packet_from_prompt(prompt)
+        sources = packet["sources"]
+        assert isinstance(sources, list)
+        assert len(sources) == 1
+        assert sources[0]["html_markdown"].startswith("# Claim")
+        plan = page_plan(source, path="concepts/claim.md")
+        plan["mode"] = "raw"
+        plan["raw_files_to_delete"] = []
+        plan_path = plan_path_from_prompt(prompt)
+        plan_path.parent.mkdir(parents=True, exist_ok=True)
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        return 0
+
+    monkeypatch.chdir(vault)
+    monkeypatch.setattr(ingest.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(qmd_module.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(ingest.subprocess, "run", fake_run_with_defuddle("# Claim\n\nNotes"))
+    monkeypatch.setattr(ingest, "call_codex_exec", fake_codex)
+
+    assert cli.cmd_dispatch(args) == 0
+    assert not source.exists()
+    assert not defuddle_extract.exists()
+    manifest = json.loads((vault / ".manifest.json").read_text(encoding="utf-8"))
+    entry = manifest["sources"][str(source)]
+    assert (vault / entry["original_path"]).read_text(encoding="utf-8").startswith("<html>")
+    assert (vault / entry["extracted_path"]).read_text(encoding="utf-8") == "# Claim\n\nNotes\n"
+
+
+def test_raw_cleanup_paths_include_tracked_html_extracts(tmp_path: Path) -> None:
+    vault = make_vault(tmp_path)
+    source_path = vault / "_raw" / "adj.html"
+    extract_path = vault / "_raw" / "adj.defuddle.md"
+    source_path.write_text("<html></html>", encoding="utf-8")
+    extract_path.write_text("# Adj\n", encoding="utf-8")
+    source = ingest.build_source(source_path, {"sources": {}})
+    source = ingest.replace(source, cleanup_paths=(extract_path,))
+    plan = page_plan(source_path, path="concepts/adj.md")
+    plan["mode"] = "raw"
+    validated = ingest.validate_plan(
+        plan,
+        vault,
+        {"OBSIDIAN_LINK_FORMAT": "wikilink"},
+        {"sources": {}},
+        [source],
+        "raw",
+    )
+
+    cleanup = ingest.raw_cleanup_paths(validated, [source], vault, {"OBSIDIAN_LINK_FORMAT": "wikilink"}, "raw")
+
+    assert cleanup == [source_path.resolve(), extract_path.resolve()]
 
 
 def test_url_ingest_valid_plan_applies_reference_and_manifest(tmp_path: Path, monkeypatch) -> None:
